@@ -1,12 +1,23 @@
-import { createBrowserClient } from "@supabase/ssr"
+import { createClient as createSupabaseClient } from "@supabase/supabase-js"
 import type { Database } from "./database.types"
 
-export function createClient() {
-  return createBrowserClient<Database>(
+function makeClient() {
+  return createSupabaseClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      auth: {
+        autoRefreshToken: true,
+        persistSession: true,
+        detectSessionInUrl: false,
+        lock: (_name: string, _acquireTimeout: number, fn: () => Promise<unknown>) => fn(),
+      },
+    }
   )
 }
 
-// 单例，客户端组件直接 import 使用
-export const supabase = createClient()
+export const supabase = makeClient()
+
+export function createClient() {
+  return makeClient()
+}
