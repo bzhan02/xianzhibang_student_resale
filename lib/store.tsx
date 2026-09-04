@@ -14,6 +14,7 @@ import { getToken } from "./utils"
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+const PAGE_SIZE = 20
 
 type DbItem = {
   id: string
@@ -30,7 +31,7 @@ type DbItem = {
   view_count: number
   is_sold: boolean
   created_at: string
-  profiles?: { name: string | null; school: string | null } | null
+  profiles?: { name: string | null; school: string | null; avatar_url: string | null } | null
 }
 
 function toItem(row: DbItem): Item {
@@ -47,7 +48,7 @@ function toItem(row: DbItem): Item {
     seller: {
       id: row.seller_id,
       name: row.profiles?.name ?? "用户",
-      avatar: "",
+      avatar: row.profiles?.avatar_url ?? "",
       school: row.profiles?.school ?? "",
       rating: 0,
       itemsCount: 0,
@@ -60,31 +61,37 @@ function toItem(row: DbItem): Item {
   }
 }
 
-async function fetchAllItems(): Promise<Item[]> {
+async function fetchItems(offset = 0): Promise<{ items: Item[]; hasMore: boolean }> {
   try {
+    const limit = PAGE_SIZE + 1 // 多取一条用于判断是否还有更多
     const res = await fetch(
-      `${SUPABASE_URL}/rest/v1/items?is_sold=eq.false&select=*,profiles!seller_id(name,school)&order=created_at.desc&limit=100`,
+      `${SUPABASE_URL}/rest/v1/items?is_sold=eq.false&select=*,profiles!seller_id(name,school,avatar_url)&order=created_at.desc&limit=${limit}&offset=${offset}`,
       { headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` } }
     )
     if (res.ok) {
       const data: DbItem[] = await res.json()
-      return data.map(toItem)
+      const hasMore = data.length > PAGE_SIZE
+      return { items: data.slice(0, PAGE_SIZE).map(toItem), hasMore }
     }
+    // 降级：不 join profiles
     const res2 = await fetch(
-      `${SUPABASE_URL}/rest/v1/items?is_sold=eq.false&select=*&order=created_at.desc&limit=100`,
+      `${SUPABASE_URL}/rest/v1/items?is_sold=eq.false&select=*&order=created_at.desc&limit=${limit}&offset=${offset}`,
       { headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` } }
     )
-    if (!res2.ok) return []
+    if (!res2.ok) return { items: [], hasMore: false }
     const data2: DbItem[] = await res2.json()
-    return data2.map(toItem)
+    const hasMore2 = data2.length > PAGE_SIZE
+    return { items: data2.slice(0, PAGE_SIZE).map(toItem), hasMore: hasMore2 }
   } catch {
-    return []
+    return { items: [], hasMore: false }
   }
 }
 
 interface AppState {
   items: Item[]
   isLoading: boolean
+  hasMore: boolean
+  isLoadingMore: boolean
   favoriteIds: Set<string>
   searchQuery: string
   toggleFavorite: (itemId: string) => void
@@ -92,6 +99,7 @@ interface AppState {
   isFavorited: (itemId: string) => boolean
   getFavoriteItems: () => Item[]
   refreshItems: () => Promise<void>
+  loadMore: () => Promise<void>
 }
 
 const AppContext = createContext<AppState | null>(null)
@@ -100,22 +108,32 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth()
   const [items, setItems] = useState<Item[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [hasMore, setHasMore] = useState(false)
+  const [isLoadingMore, setIsLoadingMore] = useState(false)
   const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set())
   const [searchQuery, setSearchQuery] = useState("")
 
   const refreshItems = useCallback(async () => {
     setIsLoading(true)
-    const data = await fetchAllItems()
-    setItems(data)
+    const result = await fetchItems(0)
+    setItems(result.items)
+    setHasMore(result.hasMore)
     setIsLoading(false)
   }, [])
 
-  // 加载商品列表
+  const loadMore = useCallback(async () => {
+    if (isLoadingMore || !hasMore) return
+    setIsLoadingMore(true)
+    const result = await fetchItems(items.length)
+    setItems((prev) => [...prev, ...result.items])
+    setHasMore(result.hasMore)
+    setIsLoadingMore(false)
+  }, [isLoadingMore, hasMore, items.length])
+
   useEffect(() => {
     refreshItems()
   }, [refreshItems])
 
-  // 用户登录/登出时同步收藏
   useEffect(() => {
     if (!user) {
       setFavoriteIds(new Set())
@@ -139,30 +157,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
     (itemId: string) => {
       if (!user) return
       const token = getToken()
-
       setFavoriteIds((prev) => {
         const next = new Set(prev)
         if (next.has(itemId)) {
           next.delete(itemId)
-          // 从 DB 删除
           fetch(
             `${SUPABASE_URL}/rest/v1/favorites?user_id=eq.${user.id}&item_id=eq.${itemId}`,
-            {
-              method: "DELETE",
-              headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}` },
-            }
+            { method: "DELETE", headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}` } }
           ).catch(() => {})
         } else {
           next.add(itemId)
-          // 写入 DB
           fetch(`${SUPABASE_URL}/rest/v1/favorites`, {
             method: "POST",
-            headers: {
-              apikey: SUPABASE_ANON_KEY,
-              Authorization: `Bearer ${token}`,
-              "Content-Type": "application/json",
-              Prefer: "return=minimal",
-            },
+            headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": "application/json", Prefer: "return=minimal" },
             body: JSON.stringify({ user_id: user.id, item_id: itemId }),
           }).catch(() => {})
         }
@@ -172,30 +179,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [user]
   )
 
-  const isFavorited = useCallback(
-    (itemId: string) => favoriteIds.has(itemId),
-    [favoriteIds]
-  )
-
-  const getFavoriteItems = useCallback(
-    () => items.filter((item) => favoriteIds.has(item.id)),
-    [items, favoriteIds]
-  )
+  const isFavorited = useCallback((itemId: string) => favoriteIds.has(itemId), [favoriteIds])
+  const getFavoriteItems = useCallback(() => items.filter((item) => favoriteIds.has(item.id)), [items, favoriteIds])
 
   return (
-    <AppContext.Provider
-      value={{
-        items,
-        isLoading,
-        favoriteIds,
-        searchQuery,
-        toggleFavorite,
-        setSearchQuery,
-        isFavorited,
-        getFavoriteItems,
-        refreshItems,
-      }}
-    >
+    <AppContext.Provider value={{
+      items, isLoading, hasMore, isLoadingMore,
+      favoriteIds, searchQuery,
+      toggleFavorite, setSearchQuery, isFavorited, getFavoriteItems,
+      refreshItems, loadMore,
+    }}>
       {children}
     </AppContext.Provider>
   )
@@ -203,8 +196,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
 export function useAppStore() {
   const context = useContext(AppContext)
-  if (!context) {
-    throw new Error("useAppStore must be used within an AppProvider")
-  }
+  if (!context) throw new Error("useAppStore must be used within an AppProvider")
   return context
 }

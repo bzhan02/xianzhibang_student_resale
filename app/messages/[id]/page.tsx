@@ -6,6 +6,7 @@ import Image from "next/image"
 import Link from "next/link"
 import { ArrowLeft, Send, Loader2, CheckCircle, XCircle, Clock, Truck, Calendar } from "lucide-react"
 import { useAuth } from "@/lib/auth-context"
+import { supabase } from "@/lib/supabase"
 import { cn, getToken } from "@/lib/utils"
 import { toast } from "sonner"
 
@@ -54,12 +55,14 @@ export default function ChatPage({ params }: { params: Promise<{ id: string }> }
   const [rejectingId, setRejectingId] = useState<string | null>(null)
   const [rejectReason, setRejectReason] = useState("")
   const bottomRef = useRef<HTMLDivElement>(null)
-  const pollingRef = useRef<NodeJS.Timeout | null>(null)
+  const userRef = useRef(user)
+  useEffect(() => { userRef.current = user }, [user])
 
   useEffect(() => {
     if (!authLoading && !user) router.push("/auth")
   }, [user, authLoading, router])
 
+  // 加载会话信息
   useEffect(() => {
     if (!user) return
     const token = getToken()
@@ -71,17 +74,12 @@ export default function ChatPage({ params }: { params: Promise<{ id: string }> }
       .then((data) => { if (data[0]) setConv(data[0]); setIsLoading(false) })
   }, [id, user])
 
-  async function loadMessages() {
+  // 标记消息已读
+  async function markRead(msgs: Message[]) {
+    const u = userRef.current
+    if (!u) return
     const token = getToken()
-    const res = await fetch(
-      `${SUPABASE_URL}/rest/v1/messages?conversation_id=eq.${id}&select=*&order=created_at.asc`,
-      { headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}` } }
-    )
-    if (!res.ok) return
-    const data: Message[] = await res.json()
-    setMessages(data)
-    // 标记已读
-    const unreadIds = data.filter((m) => !m.is_read && m.sender_id !== user!.id).map((m) => m.id)
+    const unreadIds = msgs.filter((m) => !m.is_read && m.sender_id !== u.id).map((m) => m.id)
     if (unreadIds.length > 0) {
       fetch(`${SUPABASE_URL}/rest/v1/messages?id=in.(${unreadIds.join(",")})`, {
         method: "PATCH",
@@ -91,11 +89,49 @@ export default function ChatPage({ params }: { params: Promise<{ id: string }> }
     }
   }
 
+  // 加载所有消息
+  async function loadMessages() {
+    const u = userRef.current
+    if (!u) return
+    const token = getToken()
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/messages?conversation_id=eq.${id}&select=*&order=created_at.asc`,
+      { headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}` } }
+    )
+    if (!res.ok) return
+    const data: Message[] = await res.json()
+    setMessages(data)
+    markRead(data)
+  }
+
+  // Supabase Realtime 订阅（降级到轮询作为保障）
   useEffect(() => {
     if (!user || isLoading) return
+
     loadMessages()
-    pollingRef.current = setInterval(loadMessages, 3000)
-    return () => { if (pollingRef.current) clearInterval(pollingRef.current) }
+
+    // Realtime 订阅新消息
+    const channel = supabase
+      .channel(`messages:${id}`)
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "messages", filter: `conversation_id=eq.${id}` },
+        () => { loadMessages() }
+      )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "messages", filter: `conversation_id=eq.${id}` },
+        () => { loadMessages() }
+      )
+      .subscribe()
+
+    // 保底轮询（10 秒，确保 Realtime 未开启时也能工作）
+    const poll = setInterval(loadMessages, 10000)
+
+    return () => {
+      supabase.removeChannel(channel)
+      clearInterval(poll)
+    }
   }, [id, user, isLoading])
 
   useEffect(() => {
@@ -119,13 +155,11 @@ export default function ChatPage({ params }: { params: Promise<{ id: string }> }
 
   async function acceptOffer(msgId: string, meta: OfferMeta) {
     const token = getToken()
-    // 更新 offer 状态
     await fetch(`${SUPABASE_URL}/rest/v1/messages?id=eq.${msgId}`, {
       method: "PATCH",
       headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": "application/json", Prefer: "return=minimal" },
       body: JSON.stringify({ metadata: { ...meta, status: "accepted" } }),
     })
-    // 标记商品已售出
     if (conv?.item_id) {
       await fetch(`${SUPABASE_URL}/rest/v1/items?id=eq.${conv.item_id}`, {
         method: "PATCH",
@@ -133,7 +167,6 @@ export default function ChatPage({ params }: { params: Promise<{ id: string }> }
         body: JSON.stringify({ is_sold: true }),
       })
     }
-    // 发一条系统消息
     await fetch(`${SUPABASE_URL}/rest/v1/messages`, {
       method: "POST",
       headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": "application/json", Prefer: "return=minimal" },
@@ -216,7 +249,6 @@ export default function ChatPage({ params }: { params: Promise<{ id: string }> }
           const isMine = msg.sender_id === user.id
           const time = new Date(msg.created_at).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })
 
-          // 购买请求卡片
           if (msg.message_type === "offer" && msg.metadata) {
             const meta = msg.metadata
             const statusColor = meta.status === "accepted" ? "border-green-500/30 bg-green-50 dark:bg-green-950/20"
@@ -226,7 +258,6 @@ export default function ChatPage({ params }: { params: Promise<{ id: string }> }
             return (
               <div key={msg.id} className="mb-4">
                 <div className={cn("rounded-2xl border p-4", statusColor)}>
-                  {/* 状态标题 */}
                   <div className="mb-3 flex items-center gap-2">
                     {meta.status === "pending" && <Clock className="h-4 w-4 text-primary" />}
                     {meta.status === "accepted" && <CheckCircle className="h-4 w-4 text-green-600" />}
@@ -238,8 +269,6 @@ export default function ChatPage({ params }: { params: Promise<{ id: string }> }
                     </span>
                     <span className="ml-auto text-[10px] text-muted-foreground">{time}</span>
                   </div>
-
-                  {/* 详情 */}
                   <div className="space-y-1.5 text-xs text-muted-foreground">
                     <div className="flex items-center gap-1.5">
                       <Truck className="h-3.5 w-3.5 shrink-0" />
@@ -255,45 +284,30 @@ export default function ChatPage({ params }: { params: Promise<{ id: string }> }
                       </div>
                     )}
                   </div>
-
-                  {/* 卖家操作按钮（仅对 pending 状态的卖家显示） */}
                   {isSeller && meta.status === "pending" && (
                     <div className="mt-3 space-y-2">
                       {rejectingId === msg.id ? (
                         <div className="space-y-2">
-                          <input
-                            value={rejectReason}
-                            onChange={(e) => setRejectReason(e.target.value)}
+                          <input value={rejectReason} onChange={(e) => setRejectReason(e.target.value)}
                             placeholder="请填写拒绝原因（必填）"
-                            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-xs outline-none focus:border-primary"
-                          />
+                            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-xs outline-none focus:border-primary" />
                           <div className="flex gap-2">
                             <button type="button" onClick={() => { setRejectingId(null); setRejectReason("") }}
-                              className="flex-1 rounded-lg border border-border py-2 text-xs text-muted-foreground hover:bg-accent">
-                              取消
-                            </button>
+                              className="flex-1 rounded-lg border border-border py-2 text-xs text-muted-foreground hover:bg-accent">取消</button>
                             <button type="button" onClick={() => rejectOffer(msg.id, meta)}
-                              className="flex-1 rounded-lg bg-destructive py-2 text-xs font-medium text-white hover:bg-destructive/90">
-                              确认拒绝
-                            </button>
+                              className="flex-1 rounded-lg bg-destructive py-2 text-xs font-medium text-white hover:bg-destructive/90">确认拒绝</button>
                           </div>
                         </div>
                       ) : (
                         <div className="flex gap-2">
                           <button type="button" onClick={() => { setRejectingId(msg.id); setRejectReason("") }}
-                            className="flex-1 rounded-lg border border-destructive/40 py-2 text-xs font-medium text-destructive hover:bg-destructive/5">
-                            拒绝
-                          </button>
+                            className="flex-1 rounded-lg border border-destructive/40 py-2 text-xs font-medium text-destructive hover:bg-destructive/5">拒绝</button>
                           <button type="button" onClick={() => acceptOffer(msg.id, meta)}
-                            className="flex-1 rounded-lg bg-primary py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90">
-                            接受
-                          </button>
+                            className="flex-1 rounded-lg bg-primary py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90">接受</button>
                         </div>
                       )}
                     </div>
                   )}
-
-                  {/* 买家等待提示 */}
                   {!isSeller && meta.status === "pending" && (
                     <p className="mt-3 text-center text-xs text-muted-foreground">等待卖家确认中...</p>
                   )}
@@ -302,7 +316,6 @@ export default function ChatPage({ params }: { params: Promise<{ id: string }> }
             )
           }
 
-          // 普通消息气泡
           return (
             <div key={msg.id} className={cn("mb-3 flex", isMine ? "justify-end" : "justify-start")}>
               <div className={cn("max-w-[72%] flex flex-col gap-1", isMine ? "items-end" : "items-start")}>
@@ -323,13 +336,10 @@ export default function ChatPage({ params }: { params: Promise<{ id: string }> }
       {/* 输入栏 */}
       <div className="border-t border-border bg-background px-4 py-3">
         <div className="flex items-center gap-2">
-          <input
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
+          <input value={input} onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage() } }}
             placeholder="输入消息..."
-            className="flex-1 rounded-full border border-border bg-secondary px-4 py-2.5 text-sm outline-none focus:border-primary"
-          />
+            className="flex-1 rounded-full border border-border bg-secondary px-4 py-2.5 text-sm outline-none focus:border-primary" />
           <button type="button" onClick={sendMessage} disabled={!input.trim() || isSending}
             className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground disabled:opacity-50">
             {isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
