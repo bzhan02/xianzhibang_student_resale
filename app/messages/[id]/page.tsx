@@ -9,6 +9,8 @@ import { useAuth } from "@/lib/auth-context"
 import { supabase } from "@/lib/supabase"
 import { cn, getToken } from "@/lib/utils"
 import { toast } from "sonner"
+import { ReviewDialog, ReviewPrompt } from "@/components/review-dialog"
+import { fetchMyReviewForConversation, type Review } from "@/lib/reviews"
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -54,6 +56,8 @@ export default function ChatPage({ params }: { params: Promise<{ id: string }> }
   const [isLoading, setIsLoading] = useState(true)
   const [rejectingId, setRejectingId] = useState<string | null>(null)
   const [rejectReason, setRejectReason] = useState("")
+  const [myReview, setMyReview] = useState<Review | null>(null)
+  const [reviewOpen, setReviewOpen] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const userRef = useRef(user)
   useEffect(() => { userRef.current = user }, [user])
@@ -72,6 +76,12 @@ export default function ChatPage({ params }: { params: Promise<{ id: string }> }
     )
       .then((r) => r.json())
       .then((data) => { if (data[0]) setConv(data[0]); setIsLoading(false) })
+  }, [id, user])
+
+  // 我在这笔交易里是否已评价
+  useEffect(() => {
+    if (!user) return
+    fetchMyReviewForConversation(id, user.id).then(setMyReview)
   }, [id, user])
 
   // 标记消息已读
@@ -203,6 +213,13 @@ export default function ChatPage({ params }: { params: Promise<{ id: string }> }
   const isSeller = conv.seller_id === user.id
   const otherName = isSeller ? (conv.buyer?.name ?? "买家") : (conv.seller?.name ?? "卖家")
 
+  // 交易确认（有已接受的 offer）后才允许评价
+  const dealConfirmed = messages.some(
+    (m) => m.message_type === "offer" && m.metadata?.status === "accepted"
+  )
+  const counterpartId = isSeller ? conv.buyer_id : conv.seller_id
+  const myRole: "buyer" | "seller" = isSeller ? "seller" : "buyer"
+
   return (
     <div className="flex h-[100dvh] flex-col">
       {/* 顶部栏 */}
@@ -330,6 +347,17 @@ export default function ChatPage({ params }: { params: Promise<{ id: string }> }
             </div>
           )
         })}
+        {/* 交易确认后的评价入口 */}
+        {dealConfirmed && (
+          <ReviewPrompt
+            reviewed={!!myReview}
+            myRating={myReview?.rating ?? 0}
+            onOpen={() => setReviewOpen(true)}
+            counterpartName={otherName}
+            role={myRole}
+          />
+        )}
+
         <div ref={bottomRef} />
       </div>
 
@@ -347,6 +375,23 @@ export default function ChatPage({ params }: { params: Promise<{ id: string }> }
         </div>
         <div className="h-[env(safe-area-inset-bottom)]" />
       </div>
+
+      {/* 评价弹窗 */}
+      <ReviewDialog
+        open={reviewOpen}
+        onClose={() => setReviewOpen(false)}
+        onSubmitted={() => {
+          toast.success("评价已提交，感谢反馈！")
+          fetchMyReviewForConversation(id, user.id).then(setMyReview)
+        }}
+        conversationId={id}
+        itemId={conv.item_id}
+        revieweeId={counterpartId}
+        revieweeName={otherName}
+        itemTitle={conv.items?.title ?? ""}
+        reviewerRole={myRole}
+        myUserId={user.id}
+      />
     </div>
   )
 }

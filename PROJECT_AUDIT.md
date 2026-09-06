@@ -2,7 +2,7 @@
 
 > 生成时间：2026-09-03  
 > 项目路径：`C:\Users\rober\student-resale`  
-> 线上地址：`https://xianzhiban.vercel.app`
+> 线上地址：`https://xianzhibang.vercel.app`（旧域名 `xianzhiban.vercel.app` 仍可访问）
 
 ---
 
@@ -153,8 +153,8 @@ md:      grid-cols-10（一行展示全部）
 ```
 projectId:   prj_WRssUMg0cr5OMiGQhPiNVE8YaXkw
 orgId:       team_AvUP2BaAgZP2nNeTnwQ6WXVT
-projectName: xianzhiban
-URL:         https://xianzhiban.vercel.app
+projectName: xianzhibang
+URL:         https://xianzhibang.vercel.app
 ```
 
 ### 部署命令

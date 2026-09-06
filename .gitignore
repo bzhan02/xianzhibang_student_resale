@@ -15,3 +15,6 @@ node_modules/
 
 # 本地部署脚本
 *.bat
+
+# 旧脚本备份
+.old_*

@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation"
 import { Star, Package, ShoppingBag, Heart, Settings, ChevronRight, Info, LogOut, HelpCircle } from "lucide-react"
 import { useAuth } from "@/lib/auth-context"
 import { getToken } from "@/lib/utils"
+import { fetchRatingSummary, type RatingSummary } from "@/lib/reviews"
+import { ReviewList } from "@/components/rating-display"
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -24,7 +26,12 @@ export default function ProfilePage() {
   const [listedCount, setListedCount] = useState(0)
   const [soldCount, setSoldCount] = useState(0)
   const [favCount, setFavCount] = useState(0)
-  const rating = 5.0
+  const [summary, setSummary] = useState<RatingSummary>({ rating: 0, reviewCount: 0 })
+
+  useEffect(() => {
+    if (!user) return
+    fetchRatingSummary(user.id).then(setSummary)
+  }, [user])
 
   useEffect(() => {
     if (!isLoading && !user) router.push("/auth")
@@ -89,14 +96,25 @@ export default function ProfilePage() {
           <div className="flex-1">
             <h1 className="text-xl font-bold">{displayName}</h1>
             <p className="mt-0.5 text-sm text-primary-foreground/80">{displaySchool}</p>
-            {soldCount > 0 ? (
-              <div className="mt-1 flex items-center gap-1">
-                <Star className="h-3.5 w-3.5 fill-current" />
-                <span className="text-sm font-medium">{rating.toFixed(1)}</span>
-                <span className="text-xs text-primary-foreground/60"> (评分)</span>
+            {summary.reviewCount > 0 ? (
+              <div className="mt-1 flex items-center gap-1.5">
+                <span className="flex items-center gap-0.5">
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <Star
+                      key={i}
+                      className={`h-3.5 w-3.5 ${
+                        i < Math.round(summary.rating) ? "fill-current" : "text-primary-foreground/30"
+                      }`}
+                    />
+                  ))}
+                </span>
+                <span className="text-sm font-medium">{summary.rating.toFixed(1)}</span>
+                <span className="text-xs text-primary-foreground/60">
+                  ({summary.reviewCount} 条评价)
+                </span>
               </div>
             ) : (
-              <div className="mt-1 text-xs text-primary-foreground/60">暂无评分</div>
+              <div className="mt-1 text-xs text-primary-foreground/60">暂无评价</div>
             )}
           </div>
         </div>
@@ -115,6 +133,19 @@ export default function ProfilePage() {
           </div>
         </div>
       </div>
+      {/* 我收到的评价 */}
+      <section className="mt-5">
+        <div className="mb-2.5 flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-foreground">我收到的评价</h2>
+          {summary.reviewCount > 0 && (
+            <a href={`/users/${user.id}`} className="text-xs text-primary">
+              查看主页
+            </a>
+          )}
+        </div>
+        <ReviewList userId={user.id} limit={5} />
+      </section>
+
       <div className="mt-5 overflow-hidden rounded-xl border border-border bg-card">
         {menuItems.map((item, index) => {
           const Icon = item.icon
