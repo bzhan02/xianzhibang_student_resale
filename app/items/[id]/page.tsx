@@ -232,6 +232,36 @@ export default function ItemDetailPage({
     ? Math.round((1 - item.price / item.original_price) * 100)
     : 0
 
+  // 分享：优先唤起系统面板（手机可直接选微信/小红书），不支持则复制链接
+  async function shareItem() {
+    if (!item) return
+    const url = window.location.href
+    const title = `$${item.price} ${item.title}`
+    const text = [
+      `${item.title} · $${item.price}`,
+      item.original_price ? `原价 $${item.original_price}` : "",
+      item.condition,
+      item.location,
+    ].filter(Boolean).join(" · ")
+
+    if (typeof navigator !== "undefined" && navigator.share) {
+      try {
+        await navigator.share({ title, text, url })
+        return
+      } catch (err) {
+        // 用户主动取消，不提示错误
+        if (err instanceof Error && err.name === "AbortError") return
+      }
+    }
+
+    try {
+      await navigator.clipboard.writeText(`${text}\n${url}`)
+      toast.success("链接已复制，去粘贴给同学吧")
+    } catch {
+      toast.error("复制失败，请手动复制地址栏链接")
+    }
+  }
+
   return (
     <div className="pb-32 md:pb-0">
       {/* 桌面端：左右两栏 */}
@@ -249,11 +279,7 @@ export default function ItemDetailPage({
           className="flex h-9 w-9 items-center justify-center rounded-full bg-card/80 shadow-sm backdrop-blur-sm hover:bg-card">
           <QrCode className="h-4 w-4" />
         </button>
-        <button type="button" onClick={() => {
-          navigator.clipboard.writeText(window.location.href)
-            .then(() => toast.success("链接已复制到剪贴板"))
-            .catch(() => toast.error("复制失败，请手动复制地址"))
-        }}
+        <button type="button" onClick={shareItem}
           className="flex h-9 w-9 items-center justify-center rounded-full bg-card/80 shadow-sm backdrop-blur-sm hover:bg-card">
           <Share2 className="h-4 w-4" />
         </button>
