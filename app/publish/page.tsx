@@ -14,6 +14,7 @@ import { toast } from "sonner"
 import { useAuth } from "@/lib/auth-context"
 import type { ItemCondition, DeliveryMethod, CategorySlug } from "@/lib/types"
 import { getToken } from "@/lib/utils"
+import { compressImages, summarize, ITEM_IMAGE_PRESET } from "@/lib/image-compress"
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -42,7 +43,8 @@ async function sbFetch(path: string, options: RequestInit = {}) {
 
 async function uploadImage(userId: string, itemId: string, index: number, file: File): Promise<string> {
   const token = getToken()
-  const ext = file.name.split(".").pop() ?? "jpg"
+  // 压缩后扩展名会变（webp/jpg），从 MIME 推断更可靠
+  const ext = file.type === "image/webp" ? "webp" : file.type === "image/png" ? "png" : "jpg"
   const path = `${userId}/${itemId}/${index}.${ext}`
   const res = await fetch(`${SUPABASE_URL}/storage/v1/object/item-images/${path}`, {
     method: "POST",
@@ -71,6 +73,9 @@ export default function PublishPage() {
   const [deliveryMethod, setDeliveryMethod] = useState<DeliveryMethod | "">("")
   const [location, setLocation] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isCompressing, setIsCompressing] = useState(false)
+  const [compressProgress, setCompressProgress] = useState({ done: 0, total: 0 })
+  const [uploadProgress, setUploadProgress] = useState({ done: 0, total: 0 })
 
   if (!user) {
     return (
@@ -81,12 +86,31 @@ export default function PublishPage() {
     )
   }
 
-  function handleImageChange(e: React.ChangeEvent<HTMLInputElement>) {
+  async function handleImageChange(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? [])
-    if (imageFiles.length + files.length > 6) { toast.error("最多上传 6 张图片"); return }
-    setImageFiles([...imageFiles, ...files])
-    setImagePreviews([...imagePreviews, ...files.map((f) => URL.createObjectURL(f))])
     e.target.value = "" // 重置 input，允许重新选择同一文件或删除后重新选择
+    if (files.length === 0) return
+    if (imageFiles.length + files.length > 6) { toast.error("最多上传 6 张图片"); return }
+
+    setIsCompressing(true)
+    setCompressProgress({ done: 0, total: files.length })
+    try {
+      const results = await compressImages(files, ITEM_IMAGE_PRESET, (done, total) =>
+        setCompressProgress({ done, total })
+      )
+      const compressed = results.map((r) => r.file)
+      setImageFiles((prev) => [...prev, ...compressed])
+      setImagePreviews((prev) => [...prev, ...compressed.map((f) => URL.createObjectURL(f))])
+
+      const msg = summarize(results)
+      if (msg) toast.success(msg)
+    } catch {
+      // 压缩失败也让用户能继续发布
+      setImageFiles((prev) => [...prev, ...files])
+      setImagePreviews((prev) => [...prev, ...files.map((f) => URL.createObjectURL(f))])
+    } finally {
+      setIsCompressing(false)
+    }
   }
 
   function removeImage(index: number) {
@@ -122,8 +146,16 @@ export default function PublishPage() {
 
       let imageUrls: string[] = []
       if (imageFiles.length > 0) {
+        setUploadProgress({ done: 0, total: imageFiles.length })
+        let done = 0
         imageUrls = await Promise.all(
-          imageFiles.map((f, i) => uploadImage(user.id, item.id, i, f))
+          imageFiles.map((f, i) =>
+            uploadImage(user.id, item.id, i, f).then((url) => {
+              done += 1
+              setUploadProgress({ done, total: imageFiles.length })
+              return url
+            })
+          )
         )
         await sbFetch(`items?id=eq.${item.id}`, {
           method: "PATCH",
@@ -160,10 +192,23 @@ export default function PublishPage() {
               </div>
             ))}
             {imagePreviews.length < 6 && (
-              <label className="flex h-20 w-20 shrink-0 cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed border-border text-muted-foreground hover:border-primary hover:text-primary">
-                <Camera className="h-5 w-5" />
-                <span className="text-[10px]">{imagePreviews.length}/6</span>
-                <input type="file" accept="image/*" multiple className="hidden" onChange={handleImageChange} />
+              <label className={`flex h-20 w-20 shrink-0 flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed border-border text-muted-foreground ${isCompressing ? "cursor-wait opacity-60" : "cursor-pointer hover:border-primary hover:text-primary"}`}>
+                {isCompressing ? (
+                  <>
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                    <span className="text-[10px]">
+                      {compressProgress.total > 1
+                        ? `${compressProgress.done}/${compressProgress.total}`
+                        : "处理中"}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <Camera className="h-5 w-5" />
+                    <span className="text-[10px]">{imagePreviews.length}/6</span>
+                  </>
+                )}
+                <input type="file" accept="image/*" multiple className="hidden" disabled={isCompressing} onChange={handleImageChange} />
               </label>
             )}
           </div>
@@ -250,8 +295,19 @@ export default function PublishPage() {
             onChange={(e) => setLocation(e.target.value)} className="mt-1.5" />
         </div>
 
-        <Button type="submit" className="mt-2 w-full rounded-full" size="lg" disabled={isSubmitting}>
-          {isSubmitting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />发布中...</> : "发布商品"}
+        <Button type="submit" className="mt-2 w-full rounded-full" size="lg" disabled={isSubmitting || isCompressing}>
+          {isSubmitting ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              {uploadProgress.total > 0 && uploadProgress.done < uploadProgress.total
+                ? `上传图片 ${uploadProgress.done}/${uploadProgress.total}...`
+                : "发布中..."}
+            </>
+          ) : isCompressing ? (
+            <><Loader2 className="mr-2 h-4 w-4 animate-spin" />图片处理中...</>
+          ) : (
+            "发布商品"
+          )}
         </Button>
       </form>
     </div>

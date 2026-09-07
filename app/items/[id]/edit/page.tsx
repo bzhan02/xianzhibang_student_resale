@@ -15,6 +15,7 @@ import { toast } from "sonner"
 import { useAuth } from "@/lib/auth-context"
 import type { ItemCondition, DeliveryMethod, CategorySlug } from "@/lib/types"
 import { getToken } from "@/lib/utils"
+import { compressImages, summarize, ITEM_IMAGE_PRESET } from "@/lib/image-compress"
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -43,7 +44,7 @@ async function sbFetch(path: string, options: RequestInit = {}) {
 
 async function uploadImage(userId: string, itemId: string, index: number, file: File): Promise<string> {
   const token = getToken()
-  const ext = file.name.split(".").pop() ?? "jpg"
+  const ext = file.type === "image/webp" ? "webp" : file.type === "image/png" ? "png" : "jpg"
   const path = `${userId}/${itemId}/${index}_${Date.now()}.${ext}`
   const res = await fetch(`${SUPABASE_URL}/storage/v1/object/item-images/${path}`, {
     method: "POST",
@@ -65,6 +66,7 @@ export default function EditItemPage({ params }: { params: Promise<{ id: string 
 
   const [isLoadingItem, setIsLoadingItem] = useState(true)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isCompressing, setIsCompressing] = useState(false)
 
   const [existingImages, setExistingImages] = useState<string[]>([])
   const [newImageFiles, setNewImageFiles] = useState<File[]>([])
@@ -127,13 +129,27 @@ export default function EditItemPage({ params }: { params: Promise<{ id: string 
     setExistingImages(existingImages.filter((_, i) => i !== index))
   }
 
-  function handleNewImageChange(e: React.ChangeEvent<HTMLInputElement>) {
+  async function handleNewImageChange(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? [])
+    e.target.value = ""
+    if (files.length === 0) return
     const total = existingImages.length + newImageFiles.length + files.length
     if (total > 6) { toast.error("最多 6 张图片"); return }
-    setNewImageFiles([...newImageFiles, ...files])
-    setNewImagePreviews([...newImagePreviews, ...files.map((f) => URL.createObjectURL(f))])
-    e.target.value = ""
+
+    setIsCompressing(true)
+    try {
+      const results = await compressImages(files, ITEM_IMAGE_PRESET)
+      const compressed = results.map((r) => r.file)
+      setNewImageFiles((prev) => [...prev, ...compressed])
+      setNewImagePreviews((prev) => [...prev, ...compressed.map((f) => URL.createObjectURL(f))])
+      const msg = summarize(results)
+      if (msg) toast.success(msg)
+    } catch {
+      setNewImageFiles((prev) => [...prev, ...files])
+      setNewImagePreviews((prev) => [...prev, ...files.map((f) => URL.createObjectURL(f))])
+    } finally {
+      setIsCompressing(false)
+    }
   }
 
   function removeNewImage(index: number) {
@@ -225,10 +241,19 @@ export default function EditItemPage({ params }: { params: Promise<{ id: string 
                 </div>
               ))}
               {totalImages < 6 && (
-                <label className="flex h-20 w-20 shrink-0 cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed border-border text-muted-foreground hover:border-primary hover:text-primary">
-                  <Camera className="h-5 w-5" />
-                  <span className="text-[10px]">{totalImages}/6</span>
-                  <input type="file" accept="image/*" multiple className="hidden" onChange={handleNewImageChange} />
+                <label className={`flex h-20 w-20 shrink-0 flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed border-border text-muted-foreground ${isCompressing ? "cursor-wait opacity-60" : "cursor-pointer hover:border-primary hover:text-primary"}`}>
+                  {isCompressing ? (
+                    <>
+                      <Loader2 className="h-5 w-5 animate-spin" />
+                      <span className="text-[10px]">处理中</span>
+                    </>
+                  ) : (
+                    <>
+                      <Camera className="h-5 w-5" />
+                      <span className="text-[10px]">{totalImages}/6</span>
+                    </>
+                  )}
+                  <input type="file" accept="image/*" multiple className="hidden" disabled={isCompressing} onChange={handleNewImageChange} />
                 </label>
               )}
             </div>

@@ -10,13 +10,14 @@ import { Button } from "@/components/ui/button"
 import { toast } from "sonner"
 import { getToken } from "@/lib/utils"
 import { schoolGroups } from "@/lib/school-groups"
+import { compressImage, formatBytes, AVATAR_PRESET } from "@/lib/image-compress"
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
 async function uploadAvatar(userId: string, file: File): Promise<string> {
   const token = getToken()
-  const ext = file.name.split(".").pop() ?? "jpg"
+  const ext = file.type === "image/webp" ? "webp" : file.type === "image/png" ? "png" : "jpg"
   const path = `${userId}/avatar.${ext}`
   const res = await fetch(`${SUPABASE_URL}/storage/v1/object/avatars/${path}`, {
     method: "POST",
@@ -42,6 +43,7 @@ export default function SettingsPage() {
   const [name, setName] = useState("")
   const [school, setSchool] = useState("")
   const [isSaving, setIsSaving] = useState(false)
+  const [isCompressingAvatar, setIsCompressingAvatar] = useState(false)
   const [hasChanges, setHasChanges] = useState(false)
   const [showDropdown, setShowDropdown] = useState(false)
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null)
@@ -87,13 +89,30 @@ export default function SettingsPage() {
     )
   }, [name, school, profile, avatarFile])
 
-  function handleAvatarChange(e: React.ChangeEvent<HTMLInputElement>) {
+  async function handleAvatarChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
-    if (!file) return
-    if (file.size > 5 * 1024 * 1024) { toast.error("头像图片不超过 5MB"); return }
-    setAvatarFile(file)
-    setAvatarPreview(URL.createObjectURL(file))
     e.target.value = ""
+    if (!file) return
+    // 反正会压缩，原图上限放宽到 15MB（现代手机单张照片通常 3-8MB）
+    if (file.size > 15 * 1024 * 1024) { toast.error("图片过大，请选择 15MB 以内的照片"); return }
+
+    setIsCompressingAvatar(true)
+    try {
+      // 裁成 512px 方图，存储通常只有几十 KB
+      const result = await compressImage(file, AVATAR_PRESET)
+      setAvatarFile(result.file)
+      setAvatarPreview(URL.createObjectURL(result.file))
+      if (result.didCompress && result.originalSize > result.compressedSize * 1.5) {
+        toast.success(
+          `头像已优化 ${formatBytes(result.originalSize)} → ${formatBytes(result.compressedSize)}`
+        )
+      }
+    } catch {
+      setAvatarFile(file)
+      setAvatarPreview(URL.createObjectURL(file))
+    } finally {
+      setIsCompressingAvatar(false)
+    }
   }
 
   async function handleSave() {
@@ -201,14 +220,16 @@ export default function SettingsPage() {
                 </div>
               )}
             </div>
-            <div className="absolute inset-0 flex items-center justify-center rounded-full bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity">
-              {isUploadingAvatar
+            <div className={`absolute inset-0 flex items-center justify-center rounded-full bg-black/40 transition-opacity ${isUploadingAvatar || isCompressingAvatar ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}>
+              {isUploadingAvatar || isCompressingAvatar
                 ? <Loader2 className="h-6 w-6 text-white animate-spin" />
                 : <Camera className="h-6 w-6 text-white" />
               }
             </div>
           </button>
-          <p className="text-xs text-muted-foreground">点击更换头像（最大 5MB）</p>
+          <p className="text-xs text-muted-foreground">
+            {isCompressingAvatar ? "正在处理图片..." : "点击更换头像（会自动压缩）"}
+          </p>
           <input
             ref={avatarInputRef}
             type="file"
