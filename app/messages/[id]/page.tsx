@@ -7,13 +7,11 @@ import Link from "next/link"
 import { ArrowLeft, Send, Loader2, CheckCircle, XCircle, Clock, Truck, Calendar } from "lucide-react"
 import { useAuth } from "@/lib/auth-context"
 import { supabase } from "@/lib/supabase"
-import { cn, getToken } from "@/lib/utils"
+import { cn } from "@/lib/utils"
 import { toast } from "sonner"
 import { ReviewDialog, ReviewPrompt } from "@/components/review-dialog"
 import { fetchMyReviewForConversation, type Review } from "@/lib/reviews"
-
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+import { SUPABASE_URL, authHeaders } from "@/lib/supabase-rest"
 
 type OfferMeta = {
   delivery_method: string
@@ -69,10 +67,9 @@ export default function ChatPage({ params }: { params: Promise<{ id: string }> }
   // 加载会话信息
   useEffect(() => {
     if (!user) return
-    const token = getToken()
     fetch(
       `${SUPABASE_URL}/rest/v1/conversations?id=eq.${id}&select=id,buyer_id,seller_id,item_id,items(title,price,images),buyer:profiles!buyer_id(name),seller:profiles!seller_id(name)&limit=1`,
-      { headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}` } }
+      { headers: authHeaders() }
     )
       .then((r) => r.json())
       .then((data) => { if (data[0]) setConv(data[0]); setIsLoading(false) })
@@ -88,12 +85,11 @@ export default function ChatPage({ params }: { params: Promise<{ id: string }> }
   async function markRead(msgs: Message[]) {
     const u = userRef.current
     if (!u) return
-    const token = getToken()
     const unreadIds = msgs.filter((m) => !m.is_read && m.sender_id !== u.id).map((m) => m.id)
     if (unreadIds.length > 0) {
       fetch(`${SUPABASE_URL}/rest/v1/messages?id=in.(${unreadIds.join(",")})`, {
         method: "PATCH",
-        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": "application/json", Prefer: "return=minimal" },
+        headers: authHeaders({ "Content-Type": "application/json", Prefer: "return=minimal" }),
         body: JSON.stringify({ is_read: true }),
       }).catch(() => {})
     }
@@ -103,10 +99,9 @@ export default function ChatPage({ params }: { params: Promise<{ id: string }> }
   async function loadMessages() {
     const u = userRef.current
     if (!u) return
-    const token = getToken()
     const res = await fetch(
       `${SUPABASE_URL}/rest/v1/messages?conversation_id=eq.${id}&select=*&order=created_at.asc`,
-      { headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}` } }
+      { headers: authHeaders() }
     )
     if (!res.ok) return
     const data: Message[] = await res.json()
@@ -153,10 +148,9 @@ export default function ChatPage({ params }: { params: Promise<{ id: string }> }
     const content = input.trim()
     setInput("")
     setIsSending(true)
-    const token = getToken()
     await fetch(`${SUPABASE_URL}/rest/v1/messages`, {
       method: "POST",
-      headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": "application/json", Prefer: "return=minimal" },
+      headers: authHeaders({ "Content-Type": "application/json", Prefer: "return=minimal" }),
       body: JSON.stringify({ conversation_id: id, sender_id: user.id, content, message_type: "text" }),
     })
     setIsSending(false)
@@ -164,22 +158,21 @@ export default function ChatPage({ params }: { params: Promise<{ id: string }> }
   }
 
   async function acceptOffer(msgId: string, meta: OfferMeta) {
-    const token = getToken()
     await fetch(`${SUPABASE_URL}/rest/v1/messages?id=eq.${msgId}`, {
       method: "PATCH",
-      headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": "application/json", Prefer: "return=minimal" },
+      headers: authHeaders({ "Content-Type": "application/json", Prefer: "return=minimal" }),
       body: JSON.stringify({ metadata: { ...meta, status: "accepted" } }),
     })
     if (conv?.item_id) {
       await fetch(`${SUPABASE_URL}/rest/v1/items?id=eq.${conv.item_id}`, {
         method: "PATCH",
-        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": "application/json", Prefer: "return=minimal" },
+        headers: authHeaders({ "Content-Type": "application/json", Prefer: "return=minimal" }),
         body: JSON.stringify({ is_sold: true }),
       })
     }
     await fetch(`${SUPABASE_URL}/rest/v1/messages`, {
       method: "POST",
-      headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": "application/json", Prefer: "return=minimal" },
+      headers: authHeaders({ "Content-Type": "application/json", Prefer: "return=minimal" }),
       body: JSON.stringify({ conversation_id: id, sender_id: user!.id, content: "✅ 已确认交易！期待与你顺利完成交易。", message_type: "text" }),
     })
     toast.success("已接受购买请求，商品标记为已售出")
@@ -188,15 +181,14 @@ export default function ChatPage({ params }: { params: Promise<{ id: string }> }
 
   async function rejectOffer(msgId: string, meta: OfferMeta) {
     if (!rejectReason.trim()) { toast.error("请填写拒绝原因"); return }
-    const token = getToken()
     await fetch(`${SUPABASE_URL}/rest/v1/messages?id=eq.${msgId}`, {
       method: "PATCH",
-      headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": "application/json", Prefer: "return=minimal" },
+      headers: authHeaders({ "Content-Type": "application/json", Prefer: "return=minimal" }),
       body: JSON.stringify({ metadata: { ...meta, status: "rejected", rejection_reason: rejectReason.trim() } }),
     })
     await fetch(`${SUPABASE_URL}/rest/v1/messages`, {
       method: "POST",
-      headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": "application/json", Prefer: "return=minimal" },
+      headers: authHeaders({ "Content-Type": "application/json", Prefer: "return=minimal" }),
       body: JSON.stringify({ conversation_id: id, sender_id: user!.id, content: `❌ 拒绝了购买请求：${rejectReason.trim()}`, message_type: "text" }),
     })
     setRejectingId(null)

@@ -5,8 +5,9 @@ import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { Loader2, SlidersHorizontal, X, ChevronDown, Search as SearchIcon } from "lucide-react"
 import { ItemCard } from "@/components/item-card"
-import { categories } from "@/lib/mock-data"
+import { CATEGORIES } from "@/lib/categories"
 import { cn } from "@/lib/utils"
+import { CONDITIONS } from "@/lib/types"
 import type { Item, ItemCondition, CategorySlug } from "@/lib/types"
 import {
   searchItems,
@@ -15,8 +16,6 @@ import {
   type SortOption,
   type SearchFilters,
 } from "@/lib/search"
-
-const CONDITIONS: ItemCondition[] = ["全新", "仅拆封", "轻微使用", "明显使用"]
 
 const SORTS: { value: SortOption; label: string }[] = [
   { value: "newest", label: "最新发布" },
@@ -125,7 +124,7 @@ function SearchContent() {
         ? `$${minPrice}+`
         : `$${minPrice ?? 0}-${maxPrice}`
 
-  const categoryLabel = category ? (categories.find((c) => c.slug === category)?.name ?? "分类") : "分类"
+  const categoryLabel = category ? (CATEGORIES.find((c) => c.slug === category)?.name ?? "分类") : "分类"
   const sortLabel = SORTS.find((s) => s.value === sort)?.label ?? "最新发布"
 
   return (
@@ -190,7 +189,7 @@ function SearchContent() {
               {openPanel === "category" && (
                 <div className="flex flex-wrap gap-2">
                   <OptionPill label="全部" active={!category} onClick={() => setParam({ category: null })} />
-                  {categories.map((c) => (
+                  {CATEGORIES.map((c) => (
                     <OptionPill
                       key={c.slug}
                       label={c.name}

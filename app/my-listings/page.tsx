@@ -9,9 +9,7 @@ import { useAuth } from "@/lib/auth-context"
 import { ConditionBadge } from "@/components/condition-badge"
 import { toast } from "sonner"
 import { getToken } from "@/lib/utils"
-
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+import { SUPABASE_URL, SUPABASE_ANON_KEY, authHeaders } from "@/lib/supabase-rest"
 
 type MyItem = {
   id: string
@@ -56,7 +54,7 @@ export default function MyListingsPage() {
           const ids = list.map((i) => i.id).join(",")
           const favRes = await fetch(
             `${SUPABASE_URL}/rest/v1/favorites?item_id=in.(${ids})&select=item_id`,
-            { headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}` } }
+            { headers: authHeaders() }
           )
           if (favRes.ok) {
             const favData: { item_id: string }[] = await favRes.json()

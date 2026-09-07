@@ -1,10 +1,8 @@
 import type { MetadataRoute } from "next"
+import { CATEGORY_SLUGS } from "@/lib/categories"
+import { SUPABASE_URL, anonHeaders } from "@/lib/supabase-rest"
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://xianzhibang.vercel.app"
-
-const CATEGORY_SLUGS = ["textbooks", "electronics", "furniture", "clothing", "transport"]
 
 // 每小时重新生成，新商品能较快被收录
 export const revalidate = 3600
@@ -12,7 +10,7 @@ export const revalidate = 3600
 async function fetchRows<T>(path: string): Promise<T[]> {
   try {
     const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
-      headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` },
+      headers: anonHeaders(),
       next: { revalidate: 3600 },
     })
     if (!res.ok) return []

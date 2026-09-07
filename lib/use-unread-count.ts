@@ -3,9 +3,7 @@
 import { useEffect, useState } from "react"
 import { useAuth } from "./auth-context"
 import { getToken } from "./utils"
-
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+import { SUPABASE_URL, SUPABASE_ANON_KEY, authHeaders } from "@/lib/supabase-rest"
 
 export function useUnreadCount() {
   const { user } = useAuth()
@@ -18,7 +16,7 @@ export function useUnreadCount() {
     // 1. 获取用户的所有会话 ID
     const convRes = await fetch(
       `${SUPABASE_URL}/rest/v1/conversations?or=(buyer_id.eq.${user.id},seller_id.eq.${user.id})&select=id`,
-      { headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}` } }
+      { headers: authHeaders() }
     )
     if (!convRes.ok) return
     const convs: { id: string }[] = await convRes.json()

@@ -8,11 +8,9 @@ import { useAuth } from "@/lib/auth-context"
 import { useAppStore } from "@/lib/store"
 import { ConditionBadge } from "@/components/condition-badge"
 import { Button } from "@/components/ui/button"
-import { cn, getToken } from "@/lib/utils"
+import { cn } from "@/lib/utils"
 import { toast } from "sonner"
-
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+import { SUPABASE_URL, authHeaders } from "@/lib/supabase-rest"
 
 type FavItem = {
   id: string
@@ -33,11 +31,10 @@ export default function FavoritesPage() {
     if (authLoading) return
     if (!user) { setIsLoading(false); return }
 
-    const token = getToken()
     // 先拿所有收藏的 item_id
     fetch(
       `${SUPABASE_URL}/rest/v1/favorites?user_id=eq.${user.id}&select=item_id&order=created_at.desc`,
-      { headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}` } }
+      { headers: authHeaders() }
     )
       .then((r) => r.json())
       .then(async (favs: { item_id: string }[]) => {
@@ -50,7 +47,7 @@ export default function FavoritesPage() {
         // 批量拉取商品信息
         const res = await fetch(
           `${SUPABASE_URL}/rest/v1/items?id=in.(${ids})&select=id,title,price,images,condition,is_sold`,
-          { headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}` } }
+          { headers: authHeaders() }
         )
         if (res.ok) {
           const data: FavItem[] = await res.json()

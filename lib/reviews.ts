@@ -1,7 +1,4 @@
-import { getToken } from "./utils"
-
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+import { rest, restOr } from "./supabase-rest"
 
 export type ReviewerRole = "buyer" | "seller"
 
@@ -15,14 +12,8 @@ export interface Review {
   comment: string
   reviewerRole: ReviewerRole
   createdAt: string
-  reviewer?: {
-    name: string
-    avatar: string
-    school: string
-  }
-  item?: {
-    title: string
-  }
+  reviewer?: { name: string; avatar: string; school: string }
+  item?: { title: string }
 }
 
 export interface RatingSummary {
@@ -30,7 +21,7 @@ export interface RatingSummary {
   reviewCount: number
 }
 
-type DbReview = {
+type ReviewRow = {
   id: string
   conversation_id: string
   item_id: string | null
@@ -44,77 +35,45 @@ type DbReview = {
   items?: { title: string | null } | null
 }
 
-function toReview(row: DbReview): Review {
+function toReview(r: ReviewRow): Review {
   return {
-    id: row.id,
-    conversationId: row.conversation_id,
-    itemId: row.item_id,
-    reviewerId: row.reviewer_id,
-    revieweeId: row.reviewee_id,
-    rating: row.rating,
-    comment: row.comment ?? "",
-    reviewerRole: (row.reviewer_role as ReviewerRole) ?? "buyer",
-    createdAt: row.created_at,
-    reviewer: row.reviewer
+    id: r.id,
+    conversationId: r.conversation_id,
+    itemId: r.item_id,
+    reviewerId: r.reviewer_id,
+    revieweeId: r.reviewee_id,
+    rating: r.rating,
+    comment: r.comment ?? "",
+    reviewerRole: (r.reviewer_role as ReviewerRole) ?? "buyer",
+    createdAt: r.created_at,
+    reviewer: r.reviewer
       ? {
-          name: row.reviewer.name ?? "用户",
-          avatar: row.reviewer.avatar_url ?? "",
-          school: row.reviewer.school ?? "",
+          name: r.reviewer.name ?? "用户",
+          avatar: r.reviewer.avatar_url ?? "",
+          school: r.reviewer.school ?? "",
         }
       : undefined,
-    item: row.items ? { title: row.items.title ?? "" } : undefined,
+    item: r.items ? { title: r.items.title ?? "" } : undefined,
   }
 }
 
-function anonHeaders(): Record<string, string> {
-  return { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` }
-}
-
-function authHeaders(): Record<string, string> {
-  return {
-    apikey: SUPABASE_ANON_KEY,
-    Authorization: `Bearer ${getToken()}`,
-    "Content-Type": "application/json",
-  }
-}
+const REVIEW_SELECT = "*,reviewer:profiles!reviewer_id(name,avatar_url,school),items(title)"
 
 /** 拉取某人收到的评价（公开可见） */
 export async function fetchReviewsFor(userId: string, limit = 20): Promise<Review[]> {
-  try {
-    const select = "*,reviewer:profiles!reviewer_id(name,avatar_url,school),items(title)"
-    let res = await fetch(
-      `${SUPABASE_URL}/rest/v1/reviews?reviewee_id=eq.${userId}&select=${encodeURIComponent(select)}&order=created_at.desc&limit=${limit}`,
-      { headers: anonHeaders() }
-    )
-    if (!res.ok) {
-      // 降级：不 join
-      res = await fetch(
-        `${SUPABASE_URL}/rest/v1/reviews?reviewee_id=eq.${userId}&select=*&order=created_at.desc&limit=${limit}`,
-        { headers: anonHeaders() }
-      )
-    }
-    if (!res.ok) return []
-    const rows: DbReview[] = await res.json()
-    return Array.isArray(rows) ? rows.map(toReview) : []
-  } catch {
-    return []
-  }
+  const query = `reviewee_id=eq.${userId}&order=created_at.desc&limit=${limit}`
+  let rows = await restOr<ReviewRow[]>(`reviews?select=${encodeURIComponent(REVIEW_SELECT)}&${query}`, [])
+  // join 失败时降级
+  if (rows.length === 0) rows = await restOr<ReviewRow[]>(`reviews?select=*&${query}`, [])
+  return rows.map(toReview)
 }
 
 /** 读取某人的评分概要 */
 export async function fetchRatingSummary(userId: string): Promise<RatingSummary> {
-  try {
-    const res = await fetch(
-      `${SUPABASE_URL}/rest/v1/profiles?id=eq.${userId}&select=rating,review_count`,
-      { headers: anonHeaders() }
-    )
-    if (!res.ok) return { rating: 0, reviewCount: 0 }
-    const rows: { rating: number | null; review_count: number | null }[] = await res.json()
-    const row = Array.isArray(rows) ? rows[0] : null
-    return { rating: row?.rating ?? 0, reviewCount: row?.review_count ?? 0 }
-  } catch {
-    return { rating: 0, reviewCount: 0 }
-  }
+  const rows = await restOr<{ rating: number | null; review_count: number | null }[]>(
+    `profiles?id=eq.${userId}&select=rating,review_count`, []
+  )
+  return { rating: rows[0]?.rating ?? 0, reviewCount: rows[0]?.review_count ?? 0 }
 }
 
 /** 我在这笔会话里是否已评价过 */
@@ -122,17 +81,11 @@ export async function fetchMyReviewForConversation(
   conversationId: string,
   myUserId: string
 ): Promise<Review | null> {
-  try {
-    const res = await fetch(
-      `${SUPABASE_URL}/rest/v1/reviews?conversation_id=eq.${conversationId}&reviewer_id=eq.${myUserId}&select=*`,
-      { headers: authHeaders() }
-    )
-    if (!res.ok) return null
-    const rows: DbReview[] = await res.json()
-    return Array.isArray(rows) && rows[0] ? toReview(rows[0]) : null
-  } catch {
-    return null
-  }
+  const rows = await restOr<ReviewRow[]>(
+    `reviews?conversation_id=eq.${conversationId}&reviewer_id=eq.${myUserId}&select=*`,
+    [], { auth: true }
+  )
+  return rows[0] ? toReview(rows[0]) : null
 }
 
 export interface SubmitReviewInput {
@@ -150,19 +103,22 @@ export interface SubmitResult {
   review?: Review
 }
 
-/** 提交评价 */
-export async function submitReview(
-  input: SubmitReviewInput,
-  myUserId: string
-): Promise<SubmitResult> {
-  if (input.rating < 1 || input.rating > 5) {
-    return { ok: false, error: "请选择 1-5 星" }
-  }
+/** 把数据库约束/策略的报错翻译成用户看得懂的话 */
+function explain(message: string): string {
+  if (message.includes("reviews_once_per_deal")) return "你已经评价过这笔交易了"
+  if (message.includes("row-level security")) return "交易确认后才能评价"
+  if (message.includes("reviews_no_self")) return "不能给自己评价"
+  return "提交失败，请稍后再试"
+}
+
+export async function submitReview(input: SubmitReviewInput, myUserId: string): Promise<SubmitResult> {
+  if (input.rating < 1 || input.rating > 5) return { ok: false, error: "请选择 1-5 星" }
   try {
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/reviews`, {
+    const rows = await rest<ReviewRow[]>("reviews", {
       method: "POST",
-      headers: { ...authHeaders(), Prefer: "return=representation" },
-      body: JSON.stringify({
+      auth: true,
+      prefer: "return=representation",
+      body: {
         conversation_id: input.conversationId,
         item_id: input.itemId,
         reviewer_id: myUserId,
@@ -170,31 +126,14 @@ export async function submitReview(
         rating: input.rating,
         comment: (input.comment ?? "").trim(),
         reviewer_role: input.reviewerRole,
-      }),
+      },
     })
-
-    if (res.ok) {
-      const rows: DbReview[] = await res.json()
-      return { ok: true, review: Array.isArray(rows) && rows[0] ? toReview(rows[0]) : undefined }
-    }
-
-    const text = await res.text()
-    if (text.includes("reviews_once_per_deal")) {
-      return { ok: false, error: "你已经评价过这笔交易了" }
-    }
-    if (text.includes("row-level security")) {
-      return { ok: false, error: "交易确认后才能评价" }
-    }
-    if (text.includes("reviews_no_self")) {
-      return { ok: false, error: "不能给自己评价" }
-    }
-    return { ok: false, error: "提交失败，请稍后再试" }
-  } catch {
-    return { ok: false, error: "网络错误，请稍后再试" }
+    return { ok: true, review: rows?.[0] ? toReview(rows[0]) : undefined }
+  } catch (err) {
+    return { ok: false, error: explain(err instanceof Error ? err.message : "") }
   }
 }
 
-/** 星级文案 */
 export function ratingLabel(n: number): string {
   return ["", "很差", "较差", "一般", "满意", "非常满意"][Math.round(n)] ?? ""
 }

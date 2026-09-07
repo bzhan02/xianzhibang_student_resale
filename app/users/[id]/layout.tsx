@@ -1,8 +1,7 @@
 import type { Metadata } from "next"
 import type { ReactNode } from "react"
+import { SUPABASE_URL, anonHeaders } from "@/lib/supabase-rest"
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://xianzhibang.vercel.app"
 
 export async function generateMetadata({
@@ -15,7 +14,7 @@ export async function generateMetadata({
     const res = await fetch(
       `${SUPABASE_URL}/rest/v1/profiles?id=eq.${id}&select=name,school,rating,review_count,items_count,avatar_url&limit=1`,
       {
-        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` },
+        headers: anonHeaders(),
         next: { revalidate: 300 },
       }
     )

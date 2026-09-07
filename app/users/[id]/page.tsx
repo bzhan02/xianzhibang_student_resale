@@ -5,10 +5,9 @@ import Link from "next/link"
 import { ArrowLeft, Loader2, GraduationCap } from "lucide-react"
 import { ItemCard } from "@/components/item-card"
 import { RatingStars, ReviewList } from "@/components/rating-display"
-import type { Item, CategorySlug, ItemCondition, DeliveryMethod } from "@/lib/types"
-
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+import type { Item } from "@/lib/types"
+import { toItem, type ItemRow } from "@/lib/item-mapper"
+import { SUPABASE_URL, anonHeaders } from "@/lib/supabase-rest"
 
 type Profile = {
   id: string
@@ -29,7 +28,7 @@ export default function UserProfilePage({ params }: { params: Promise<{ id: stri
   const [tab, setTab] = useState<"items" | "reviews">("items")
 
   useEffect(() => {
-    const headers = { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` }
+    const headers = anonHeaders()
     Promise.all([
       fetch(
         `${SUPABASE_URL}/rest/v1/profiles?id=eq.${id}&select=id,name,avatar_url,school,rating,review_count,items_count,created_at`,
@@ -44,30 +43,13 @@ export default function UserProfilePage({ params }: { params: Promise<{ id: stri
         setProfile(Array.isArray(profs) ? (profs[0] ?? null) : null)
         const p = Array.isArray(profs) ? profs[0] : null
         setItems(
-          (Array.isArray(rows) ? rows : []).map(
-            (row: Record<string, unknown>): Item => ({
-              id: row.id as string,
-              title: row.title as string,
-              description: (row.description as string) ?? "",
-              price: row.price as number,
-              originalPrice: (row.original_price as number) ?? undefined,
-              images: (row.images as string[]) ?? [],
-              category: row.category as CategorySlug,
-              condition: row.condition as ItemCondition,
-              deliveryMethod: row.delivery_method as DeliveryMethod,
-              seller: {
-                id: row.seller_id as string,
-                name: p?.name ?? "用户",
-                avatar: p?.avatar_url ?? "",
-                school: p?.school ?? "",
-                rating: p?.rating ?? 0,
-                itemsCount: p?.items_count ?? 0,
-                joinedDate: (row.created_at as string) ?? "",
-              },
-              location: (row.location as string) ?? "",
-              createdAt: row.created_at as string,
-              isFavorited: false,
-              viewCount: (row.view_count as number) ?? 0,
+          (Array.isArray(rows) ? rows : []).map((row: ItemRow) =>
+            toItem(row, {
+              name: p?.name ?? null,
+              school: p?.school ?? null,
+              avatar_url: p?.avatar_url ?? null,
+              rating: p?.rating ?? null,
+              items_count: p?.items_count ?? null,
             })
           )
         )

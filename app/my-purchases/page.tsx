@@ -9,10 +9,7 @@ import {
   Clock, Truck, CheckCircle2, XCircle, HourglassIcon,
 } from "lucide-react"
 import { useAuth } from "@/lib/auth-context"
-import { getToken } from "@/lib/utils"
-
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+import { SUPABASE_URL, authHeaders } from "@/lib/supabase-rest"
 
 type OfferStatus = "pending" | "accepted" | "rejected"
 
@@ -47,12 +44,11 @@ export default function MyPurchasesPage() {
   }, [user])
 
   async function loadPurchases() {
-    const token = getToken()
 
     // 1. 获取用户作为买家的所有会话，同时关联商品和卖家信息
     const convRes = await fetch(
       `${SUPABASE_URL}/rest/v1/conversations?buyer_id=eq.${user!.id}&select=id,item_id,updated_at,items(id,title,price,images,is_sold),seller:profiles!seller_id(name)&order=updated_at.desc`,
-      { headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}` } }
+      { headers: authHeaders() }
     )
     if (!convRes.ok) { setIsLoading(false); return }
     const convs = await convRes.json()
@@ -64,7 +60,7 @@ export default function MyPurchasesPage() {
       convs.map(async (conv: any) => {
         const msgRes = await fetch(
           `${SUPABASE_URL}/rest/v1/messages?conversation_id=eq.${conv.id}&message_type=eq.offer&order=created_at.desc&limit=1`,
-          { headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}` } }
+          { headers: authHeaders() }
         )
         if (!msgRes.ok) return
         const msgs = await msgRes.json()

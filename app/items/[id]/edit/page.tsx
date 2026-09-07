@@ -10,54 +10,14 @@ import { Button } from "@/components/ui/button"
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select"
-import { categories } from "@/lib/mock-data"
+import { CATEGORIES } from "@/lib/categories"
 import { toast } from "sonner"
 import { useAuth } from "@/lib/auth-context"
+import { CONDITIONS, DELIVERIES } from "@/lib/types"
 import type { ItemCondition, DeliveryMethod, CategorySlug } from "@/lib/types"
-import { getToken } from "@/lib/utils"
+import { rest, restOr } from "@/lib/supabase-rest"
 import { compressImages, summarize, ITEM_IMAGE_PRESET } from "@/lib/image-compress"
-
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-
-const CONDITIONS: ItemCondition[] = ["全新", "仅拆封", "轻微使用", "明显使用"]
-const DELIVERIES: DeliveryMethod[] = ["自取", "邮寄", "均可"]
-
-async function sbFetch(path: string, options: RequestInit = {}) {
-  const token = getToken()
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      apikey: SUPABASE_ANON_KEY,
-      Authorization: `Bearer ${token}`,
-      Prefer: "return=representation",
-      ...(options.headers ?? {}),
-    },
-  })
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ message: res.statusText }))
-    throw new Error(err.message ?? "请求失败")
-  }
-  return res.json()
-}
-
-async function uploadImage(userId: string, itemId: string, index: number, file: File): Promise<string> {
-  const token = getToken()
-  const ext = file.type === "image/webp" ? "webp" : file.type === "image/png" ? "png" : "jpg"
-  const path = `${userId}/${itemId}/${index}_${Date.now()}.${ext}`
-  const res = await fetch(`${SUPABASE_URL}/storage/v1/object/item-images/${path}`, {
-    method: "POST",
-    headers: {
-      apikey: SUPABASE_ANON_KEY,
-      Authorization: `Bearer ${token}`,
-      "Content-Type": file.type || "image/jpeg",
-    },
-    body: file,
-  })
-  if (!res.ok) throw new Error("图片上传失败")
-  return `${SUPABASE_URL}/storage/v1/object/public/item-images/${path}`
-}
+import { uploadItemImage } from "@/lib/uploads"
 
 export default function EditItemPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
@@ -81,13 +41,9 @@ export default function EditItemPage({ params }: { params: Promise<{ id: string 
   const [location, setLocation] = useState("")
 
   useEffect(() => {
-    fetch(
-      `${SUPABASE_URL}/rest/v1/items?id=eq.${id}&select=*&limit=1`,
-      { headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${getToken()}` } }
-    )
-      .then((r) => r.json())
+    restOr<Record<string, unknown>[]>(`items?id=eq.${id}&select=*&limit=1`, [], { auth: true })
       .then((data) => {
-        const item = data[0]
+        const item = data[0] as any
         if (!item) { toast.error("商品不存在"); router.back(); return }
         if (item.seller_id !== user?.id) {
           toast.error("无权编辑此商品")
@@ -171,15 +127,16 @@ export default function EditItemPage({ params }: { params: Promise<{ id: string 
       if (newImageFiles.length > 0) {
         uploadedUrls = await Promise.all(
           newImageFiles.map((f, i) =>
-            uploadImage(user.id, id, existingImages.length + i, f)
+            uploadItemImage(user.id, id, existingImages.length + i, f, { unique: true })
           )
         )
       }
       const allImages = [...existingImages, ...uploadedUrls]
 
-      await sbFetch(`items?id=eq.${id}`, {
+      await rest(`items?id=eq.${id}`, {
         method: "PATCH",
-        body: JSON.stringify({
+        auth: true,
+        body: {
           title: title.trim(),
           description: description.trim(),
           price: parseFloat(price),
@@ -189,7 +146,7 @@ export default function EditItemPage({ params }: { params: Promise<{ id: string 
           condition: condition as ItemCondition,
           delivery_method: (deliveryMethod || "均可") as DeliveryMethod,
           location: location.trim(),
-        }),
+        },
       })
 
       toast.success("修改已保存！")
@@ -296,7 +253,7 @@ export default function EditItemPage({ params }: { params: Promise<{ id: string 
             <Select value={category} onValueChange={(v) => setCategory(v as CategorySlug)}>
               <SelectTrigger className="mt-1.5 w-full"><SelectValue placeholder="请选择分类" /></SelectTrigger>
               <SelectContent>
-                {categories.map((cat) => (
+                {CATEGORIES.map((cat) => (
                   <SelectItem key={cat.slug} value={cat.slug}>{cat.name}</SelectItem>
                 ))}
               </SelectContent>

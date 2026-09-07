@@ -6,10 +6,7 @@ import Image from "next/image"
 import { useRouter } from "next/navigation"
 import { Loader2, MessageCircle } from "lucide-react"
 import { useAuth } from "@/lib/auth-context"
-import { getToken } from "@/lib/utils"
-
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+import { SUPABASE_URL, authHeaders } from "@/lib/supabase-rest"
 
 type Conversation = {
   id: string
@@ -45,10 +42,9 @@ export default function MessagesPage() {
 
   async function loadConversations() {
     if (isFirstLoad.current) setIsLoading(true)
-    const token = getToken()
     const res = await fetch(
       `${SUPABASE_URL}/rest/v1/conversations?or=(buyer_id.eq.${user!.id},seller_id.eq.${user!.id})&select=id,item_id,buyer_id,seller_id,updated_at,items(title,images),buyer:profiles!buyer_id(name),seller:profiles!seller_id(name)&order=updated_at.desc`,
-      { headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}` } }
+      { headers: authHeaders() }
     )
     if (!res.ok) { setIsLoading(false); isFirstLoad.current = false; return }
     const data: Conversation[] = await res.json()
@@ -58,7 +54,7 @@ export default function MessagesPage() {
       data.map(async (conv) => {
         const msgRes = await fetch(
           `${SUPABASE_URL}/rest/v1/messages?conversation_id=eq.${conv.id}&select=content,is_read,sender_id,message_type&order=created_at.desc&limit=20`,
-          { headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}` } }
+          { headers: authHeaders() }
         )
         if (msgRes.ok) {
           const msgs = await msgRes.json()

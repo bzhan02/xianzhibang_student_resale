@@ -6,9 +6,9 @@ export type Json =
   | { [key: string]: Json | undefined }
   | Json[]
 
-export type ItemCondition = "全新" | "仅拆封" | "轻微使用" | "明显使用"
-export type DeliveryMethod = "自取" | "邮寄" | "均可"
-export type CategorySlug = "textbooks" | "electronics" | "furniture" | "clothing" | "transport"
+// 枚举以 lib/types.ts 为准，此处只做重导出，避免两份定义漂移
+export type { ItemCondition, DeliveryMethod, CategorySlug } from "./types"
+import type { ItemCondition, DeliveryMethod, CategorySlug } from "./types"
 
 export interface Database {
   public: {

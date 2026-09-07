@@ -11,30 +11,8 @@ import { toast } from "sonner"
 import { getToken } from "@/lib/utils"
 import { schoolGroups } from "@/lib/school-groups"
 import { compressImage, formatBytes, AVATAR_PRESET } from "@/lib/image-compress"
-
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-
-async function uploadAvatar(userId: string, file: File): Promise<string> {
-  const token = getToken()
-  const ext = file.type === "image/webp" ? "webp" : file.type === "image/png" ? "png" : "jpg"
-  const path = `${userId}/avatar.${ext}`
-  const res = await fetch(`${SUPABASE_URL}/storage/v1/object/avatars/${path}`, {
-    method: "POST",
-    headers: {
-      apikey: SUPABASE_ANON_KEY,
-      Authorization: `Bearer ${token}`,
-      "Content-Type": file.type || "image/jpeg",
-      "x-upsert": "true",
-    },
-    body: file,
-  })
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}))
-    throw new Error(err.message ?? "头像上传失败")
-  }
-  return `${SUPABASE_URL}/storage/v1/object/public/avatars/${path}?t=${Date.now()}`
-}
+import { uploadAvatar } from "@/lib/uploads"
+import { SUPABASE_URL, SUPABASE_ANON_KEY, authHeaders } from "@/lib/supabase-rest"
 
 export default function SettingsPage() {
   const { user, profile, isLoading, refreshProfile } = useAuth()
@@ -125,7 +103,7 @@ export default function SettingsPage() {
       // 昵称重名检测
       const checkRes = await fetch(
         `${SUPABASE_URL}/rest/v1/profiles?name=eq.${encodeURIComponent(name.trim())}&id=neq.${user.id}&select=id&limit=1`,
-        { headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}` } }
+        { headers: authHeaders() }
       )
       if (checkRes.ok) {
         const existing = await checkRes.json()

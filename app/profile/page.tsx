@@ -4,12 +4,9 @@ import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Star, Package, ShoppingBag, Heart, Settings, ChevronRight, Info, LogOut, HelpCircle } from "lucide-react"
 import { useAuth } from "@/lib/auth-context"
-import { getToken } from "@/lib/utils"
 import { fetchRatingSummary, type RatingSummary } from "@/lib/reviews"
 import { ReviewList } from "@/components/rating-display"
-
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+import { SUPABASE_URL, authHeaders } from "@/lib/supabase-rest"
 
 const menuItems = [
   { icon: Package, label: "我的发布", description: "管理已发布的商品", href: "/my-listings" },
@@ -39,10 +36,9 @@ export default function ProfilePage() {
 
   useEffect(() => {
     if (!user) return
-    const token = getToken()
     fetch(
       `${SUPABASE_URL}/rest/v1/items?seller_id=eq.${user.id}&select=is_sold`,
-      { headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}` } }
+      { headers: authHeaders() }
     )
       .then((r) => r.json())
       .then((data: { is_sold: boolean }[]) => {
@@ -55,10 +51,9 @@ export default function ProfilePage() {
 
   useEffect(() => {
     if (!user) return
-    const token = getToken()
     fetch(
       `${SUPABASE_URL}/rest/v1/favorites?user_id=eq.${user.id}&select=item_id`,
-      { headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}` } }
+      { headers: authHeaders() }
     )
       .then((r) => r.json())
       .then((data: { item_id: string }[]) => {

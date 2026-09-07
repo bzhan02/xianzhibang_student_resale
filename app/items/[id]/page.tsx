@@ -14,9 +14,7 @@ import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { useAuth } from "@/lib/auth-context"
 import { useAppStore } from "@/lib/store"
-
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+import { SUPABASE_URL, SUPABASE_ANON_KEY, anonHeaders, authHeaders } from "@/lib/supabase-rest"
 
 type Item = {
   id: string
@@ -107,7 +105,7 @@ export default function ItemDetailPage({
     const token = getToken()
     const existing = await fetch(
       `${SUPABASE_URL}/rest/v1/conversations?item_id=eq.${id}&buyer_id=eq.${user!.id}&select=id&limit=1`,
-      { headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}` } }
+      { headers: authHeaders() }
     ).then((r) => r.json())
     if (existing?.[0]?.id) return existing[0].id
     const res = await fetch(`${SUPABASE_URL}/rest/v1/conversations`, {
@@ -198,11 +196,7 @@ export default function ItemDetailPage({
           didIncrement.current = true
           fetch(`${SUPABASE_URL}/rest/v1/rpc/increment_view_count`, {
             method: "POST",
-            headers: {
-              apikey: SUPABASE_ANON_KEY,
-              Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-              "Content-Type": "application/json",
-            },
+            headers: anonHeaders({ "Content-Type": "application/json" }),
             body: JSON.stringify({ item_id: id }),
           }).catch(() => {})
         }

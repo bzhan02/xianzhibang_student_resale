@@ -4,13 +4,11 @@ import { use, useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import Image from "next/image"
 import { ArrowLeft, SlidersHorizontal, Loader2, PackageOpen } from "lucide-react"
-import { getCategoryBySlug } from "@/lib/mock-data"
+import { getCategory } from "@/lib/categories"
 import { useAppStore } from "@/lib/store"
 import { ConditionBadge } from "@/components/condition-badge"
 import { cn } from "@/lib/utils"
-
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+import { SUPABASE_URL, anonHeaders } from "@/lib/supabase-rest"
 
 type SortOption = "newest" | "price-asc" | "price-desc"
 
@@ -31,7 +29,7 @@ export default function CategoryDetailPage({
   params: Promise<{ slug: string }>
 }) {
   const { slug } = use(params)
-  const category = getCategoryBySlug(slug)
+  const category = getCategory(slug)
   const { toggleFavorite, isFavorited } = useAppStore()
 
   const [items, setItems] = useState<DbItem[]>([])
@@ -41,7 +39,7 @@ export default function CategoryDetailPage({
   useEffect(() => {
     fetch(
       `${SUPABASE_URL}/rest/v1/items?category=eq.${slug}&is_sold=eq.false&select=id,title,price,original_price,images,condition,created_at,profiles!seller_id(name,school)&order=created_at.desc`,
-      { headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` } }
+      { headers: anonHeaders() }
     )
       .then((r) => r.json())
       .then((data) => {
@@ -50,7 +48,7 @@ export default function CategoryDetailPage({
           // fallback without profiles join
           return fetch(
             `${SUPABASE_URL}/rest/v1/items?category=eq.${slug}&is_sold=eq.false&select=id,title,price,original_price,images,condition,created_at&order=created_at.desc`,
-            { headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` } }
+            { headers: anonHeaders() }
           ).then((r) => r.json()).then((d) => { if (Array.isArray(d)) setItems(d) })
         }
         setIsLoading(false)

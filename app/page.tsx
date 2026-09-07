@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { ChevronRight, Sparkles, Loader2 } from "lucide-react"
 import { useAppStore } from "@/lib/store"
-import { categories } from "@/lib/mock-data"
+import { CATEGORIES } from "@/lib/categories"
 import { ItemCard } from "@/components/item-card"
 import { CategoryIcon } from "@/components/category-icon"
 import { HOT_SEARCHES } from "@/lib/search"
@@ -61,7 +61,7 @@ function HomeContent() {
           </Link>
         </div>
         <div className="grid grid-cols-5 md:grid-cols-10 gap-2">
-          {categories.map((cat) => (
+          {CATEGORIES.map((cat) => (
             <Link key={cat.slug} href={`/categories/${cat.slug}`} className="flex justify-center">
               <CategoryIcon icon={cat.icon} name={cat.name} size="md" />
             </Link>

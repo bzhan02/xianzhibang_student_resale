@@ -1,17 +1,9 @@
 import type { Metadata } from "next"
 import type { ReactNode } from "react"
+import { SUPABASE_URL, anonHeaders } from "@/lib/supabase-rest"
+import { categoryName } from "@/lib/categories"
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://xianzhibang.vercel.app"
-
-const CATEGORY_NAMES: Record<string, string> = {
-  textbooks: "教材书籍",
-  electronics: "电子产品",
-  furniture: "家具生活",
-  clothing: "服装配饰",
-  transport: "交通工具",
-}
 
 type ItemMeta = {
   id: string
@@ -32,7 +24,7 @@ async function fetchItem(id: string): Promise<ItemMeta | null> {
     const res = await fetch(
       `${SUPABASE_URL}/rest/v1/items?id=eq.${id}&select=id,title,description,price,original_price,images,category,condition,location,is_sold,profiles!seller_id(name,school)&limit=1`,
       {
-        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` },
+        headers: anonHeaders(),
         // 商品信息变动不频繁，缓存 60 秒，兼顾新鲜度与抓取速度
         next: { revalidate: 60 },
       }
@@ -60,7 +52,7 @@ export async function generateMetadata({
     }
   }
 
-  const categoryName = CATEGORY_NAMES[item.category] ?? "闲置好物"
+  const catName = categoryName(item.category)
   const school = item.profiles?.school ?? ""
   const seller = item.profiles?.name ?? ""
 
@@ -74,13 +66,13 @@ export async function generateMetadata({
     `$${item.price}`,
     item.original_price ? `原价 $${item.original_price}` : "",
     item.condition,
-    categoryName,
+    catName,
     school,
   ].filter(Boolean)
 
   const desc = (item.description ?? "").trim().replace(/\s+/g, " ").slice(0, 80)
   const description = [parts.join(" · "), desc].filter(Boolean).join("　") ||
-    `${seller} 在闲置帮转让的${categoryName}`
+    `${seller} 在闲置帮转让的${catName}`
 
   const image = item.images?.[0]
   const url = `${SITE_URL}/items/${item.id}`
@@ -142,7 +134,7 @@ export default async function ItemLayout({
         name: item.title,
         description: (item.description ?? "").trim().slice(0, 300) || item.title,
         image: item.images?.length ? item.images : [`${SITE_URL}/og-default.png`],
-        category: CATEGORY_NAMES[item.category] ?? "二手物品",
+        category: categoryName(item.category),
         itemCondition: CONDITION_SCHEMA[item.condition] ?? "https://schema.org/UsedCondition",
         offers: {
           "@type": "Offer",

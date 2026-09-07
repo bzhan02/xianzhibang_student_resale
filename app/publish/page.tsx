@@ -9,55 +9,14 @@ import { Button } from "@/components/ui/button"
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select"
-import { categories } from "@/lib/mock-data"
+import { CATEGORIES } from "@/lib/categories"
 import { toast } from "sonner"
 import { useAuth } from "@/lib/auth-context"
+import { CONDITIONS, DELIVERIES } from "@/lib/types"
 import type { ItemCondition, DeliveryMethod, CategorySlug } from "@/lib/types"
-import { getToken } from "@/lib/utils"
+import { rest } from "@/lib/supabase-rest"
 import { compressImages, summarize, ITEM_IMAGE_PRESET } from "@/lib/image-compress"
-
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-
-const CONDITIONS: ItemCondition[] = ["全新", "仅拆封", "轻微使用", "明显使用"]
-const DELIVERIES: DeliveryMethod[] = ["自取", "邮寄", "均可"]
-
-async function sbFetch(path: string, options: RequestInit = {}) {
-  const token = getToken()
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      apikey: SUPABASE_ANON_KEY,
-      Authorization: `Bearer ${token}`,
-      Prefer: "return=representation",
-      ...(options.headers ?? {}),
-    },
-  })
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ message: res.statusText }))
-    throw new Error(err.message ?? "请求失败")
-  }
-  return res.json()
-}
-
-async function uploadImage(userId: string, itemId: string, index: number, file: File): Promise<string> {
-  const token = getToken()
-  // 压缩后扩展名会变（webp/jpg），从 MIME 推断更可靠
-  const ext = file.type === "image/webp" ? "webp" : file.type === "image/png" ? "png" : "jpg"
-  const path = `${userId}/${itemId}/${index}.${ext}`
-  const res = await fetch(`${SUPABASE_URL}/storage/v1/object/item-images/${path}`, {
-    method: "POST",
-    headers: {
-      apikey: SUPABASE_ANON_KEY,
-      Authorization: `Bearer ${token}`,
-      "Content-Type": file.type || "image/jpeg",
-    },
-    body: file,
-  })
-  if (!res.ok) throw new Error("图片上传失败")
-  return `${SUPABASE_URL}/storage/v1/object/public/item-images/${path}`
-}
+import { uploadItemImage } from "@/lib/uploads"
 
 export default function PublishPage() {
   const router = useRouter()
@@ -128,9 +87,11 @@ export default function PublishPage() {
     }
     setIsSubmitting(true)
     try {
-      const [item] = await sbFetch("items?select=id", {
+      const [item] = await rest<{ id: string }[]>("items?select=id", {
         method: "POST",
-        body: JSON.stringify({
+        auth: true,
+        prefer: "return=representation",
+        body: {
           seller_id: user.id,
           title: title.trim(),
           description: description.trim(),
@@ -141,7 +102,7 @@ export default function PublishPage() {
           condition: condition as ItemCondition,
           delivery_method: (deliveryMethod || "均可") as DeliveryMethod,
           location: location.trim(),
-        }),
+        },
       })
 
       let imageUrls: string[] = []
@@ -150,16 +111,15 @@ export default function PublishPage() {
         let done = 0
         imageUrls = await Promise.all(
           imageFiles.map((f, i) =>
-            uploadImage(user.id, item.id, i, f).then((url) => {
+            uploadItemImage(user.id, item.id, i, f).then((url) => {
               done += 1
               setUploadProgress({ done, total: imageFiles.length })
               return url
             })
           )
         )
-        await sbFetch(`items?id=eq.${item.id}`, {
-          method: "PATCH",
-          body: JSON.stringify({ images: imageUrls }),
+        await rest(`items?id=eq.${item.id}`, {
+          method: "PATCH", auth: true, body: { images: imageUrls },
         })
       }
 
@@ -251,7 +211,7 @@ export default function PublishPage() {
           <Select value={category} onValueChange={(v) => setCategory(v as CategorySlug)}>
             <SelectTrigger className="mt-1.5 w-full"><SelectValue placeholder="请选择分类" /></SelectTrigger>
             <SelectContent>
-              {categories.map((cat) => (
+              {CATEGORIES.map((cat) => (
                 <SelectItem key={cat.slug} value={cat.slug}>{cat.name}</SelectItem>
               ))}
             </SelectContent>

@@ -5,13 +5,13 @@ import Link from "next/link"
 import { Search, MapPin, ChevronDown, ArrowUpDown, Clock, Settings } from "lucide-react"
 import { useAppStore } from "@/lib/store"
 import { useAuth } from "@/lib/auth-context"
-import { categories } from "@/lib/mock-data"
+import { CATEGORIES } from "@/lib/categories"
 import { ItemCard } from "@/components/item-card"
 import { cn } from "@/lib/utils"
 import { findGroup, findSchool, inSameGroup, isSameSchool } from "@/lib/school-groups"
 
 const rangeOptions = ["同校", "同区域", "全部"]
-const categoryOptions = ["全部", ...categories.map((c) => c.name)]
+const categoryOptions = ["全部", ...CATEGORIES.map((c) => c.name)]
 const priceOptions = ["默认", "价格从低到高", "价格从高到低"]
 
 type FilterKey = "range" | "category" | "price" | "latest"
@@ -69,7 +69,7 @@ export default function NearbyPage() {
 
     // 分类筛选
     if (selectedCategory !== "全部") {
-      const cat = categories.find((c) => c.name === selectedCategory)
+      const cat = CATEGORIES.find((c) => c.name === selectedCategory)
       if (cat) filtered = filtered.filter((item) => item.category === cat.slug)
     }
 
