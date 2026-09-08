@@ -9,6 +9,7 @@ import {
   ChevronLeft, ChevronRight, QrCode,
 } from "lucide-react"
 import { ConditionBadge } from "@/components/condition-badge"
+import { SellerCard } from "@/components/seller-card"
 import { cn, getToken } from "@/lib/utils"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -31,12 +32,18 @@ type Item = {
   view_count: number
   is_sold: boolean
   created_at: string
-  profiles: { name: string | null; school: string | null } | null
+  profiles: {
+    name: string | null
+    school: string | null
+    avatar_url?: string | null
+    rating?: number | null
+    items_count?: number | null
+  } | null
 }
 
 async function fetchItem(id: string): Promise<Item | null> {
   const res = await fetch(
-    `${SUPABASE_URL}/rest/v1/items?id=eq.${id}&select=*,profiles!seller_id(name,school)&limit=1`,
+    `${SUPABASE_URL}/rest/v1/items?id=eq.${id}&select=*,profiles!seller_id(name,school,avatar_url,rating,items_count)&limit=1`,
     {
       headers: {
         apikey: SUPABASE_ANON_KEY,
@@ -421,21 +428,22 @@ export default function ItemDetailPage({
           </div>
         )}
 
-        {/* 卖家信息 */}
+        {/* 卖家信息：显示真实评分，可跳转卖家主页 */}
         {item.profiles && (
           <div className="mt-5">
             <h2 className="mb-2 text-sm font-semibold">卖家信息</h2>
-            <div className="flex items-center gap-3 rounded-lg bg-secondary px-3 py-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary text-primary-foreground font-bold text-sm">
-                {item.profiles.name?.charAt(0).toUpperCase() ?? "U"}
-              </div>
-              <div>
-                <div className="text-sm font-medium">{item.profiles.name ?? "用户"}</div>
-                {item.profiles.school && (
-                  <div className="text-xs text-muted-foreground">{item.profiles.school}</div>
-                )}
-              </div>
-            </div>
+            <SellerCard
+              seller={{
+                id: item.seller_id,
+                name: item.profiles.name ?? "用户",
+                avatar: item.profiles.avatar_url ?? "",
+                school: item.profiles.school ?? "",
+                rating: item.profiles.rating ?? 0,
+                itemsCount: item.profiles.items_count ?? 0,
+                joinedDate: item.created_at,
+              }}
+              location={item.location ?? ""}
+            />
           </div>
         )}
       </div>

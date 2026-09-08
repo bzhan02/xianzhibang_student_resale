@@ -19,3 +19,6 @@ node_modules/
 # 旧脚本备份
 .old_*
 .removed_*
+
+# 待清理（FUSE 无法直接删除，需在 Windows 侧删）
+.trash/
