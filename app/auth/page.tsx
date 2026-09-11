@@ -164,6 +164,29 @@ function AuthPageInner() {
     })
   }
 
+  /** 忘记密码：发一封重置邮件 */
+  async function handleForgotPassword() {
+    const email = loginEmail.trim()
+    if (!email) {
+      toast.error("请先在上方填写邮箱")
+      return
+    }
+    setIsLoading(true)
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/auth/reset`,
+    })
+    setIsLoading(false)
+    if (error) {
+      toast.error("发送失败", { description: error.message })
+      return
+    }
+    // Supabase 对未注册邮箱同样返回成功（防枚举），所以文案不能断言邮箱存在
+    toast.success("如果该邮箱已注册，重置邮件已发出", {
+      description: "请查收邮件并点击链接设置新密码，记得看垃圾邮件箱",
+      duration: 7000,
+    })
+  }
+
   /** 注册过但没收到验证邮件时，重新发一封 */
   async function handleResendVerification() {
     if (!loginEmail.trim()) {
@@ -212,7 +235,17 @@ function AuthPageInner() {
                 <Input id="login-email" type="email" placeholder="your@email.com" value={loginEmail} onChange={(e) => setLoginEmail(e.target.value)} className="mt-1.5" required autoComplete="email" />
               </div>
               <div>
-                <Label htmlFor="login-password">密码</Label>
+                <div className="flex items-baseline justify-between">
+                  <Label htmlFor="login-password">密码</Label>
+                  <button
+                    type="button"
+                    onClick={handleForgotPassword}
+                    disabled={isLoading}
+                    className="text-xs text-primary underline-offset-2 hover:underline disabled:opacity-50"
+                  >
+                    忘记密码？
+                  </button>
+                </div>
                 <div className="relative mt-1.5">
                   <Input id="login-password" type={showPassword ? "text" : "password"} placeholder="请输入密码" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} required autoComplete="current-password" className="pr-10" />
                   <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground">
