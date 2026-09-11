@@ -1,3 +1,0 @@
-// This file intentionally left without HTTP handlers.
-// Email verification is handled client-side at /auth/verify
-export const dynamic = 'force-dynamic'

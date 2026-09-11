@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
-import { ArrowLeft, Loader2, User, GraduationCap, Mail, Save, Check, Camera } from "lucide-react"
+import { ArrowLeft, Loader2, User, GraduationCap, Mail, Save, Check, Camera, Bell } from "lucide-react"
 import { useAuth } from "@/lib/auth-context"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -12,6 +12,7 @@ import { getToken } from "@/lib/utils"
 import { schoolGroups } from "@/lib/school-groups"
 import { compressImage, formatBytes, AVATAR_PRESET } from "@/lib/image-compress"
 import { uploadAvatar } from "@/lib/uploads"
+import { useNotifications } from "@/lib/notifications"
 import { SUPABASE_URL, SUPABASE_ANON_KEY, authHeaders } from "@/lib/supabase-rest"
 
 export default function SettingsPage() {
@@ -22,6 +23,12 @@ export default function SettingsPage() {
   const [school, setSchool] = useState("")
   const [isSaving, setIsSaving] = useState(false)
   const [isCompressingAvatar, setIsCompressingAvatar] = useState(false)
+  const {
+    permission: notifyPermission,
+    enabled: notifyEnabled,
+    setEnabled: setNotifyEnabled,
+    requestPermission: requestNotifyPermission,
+  } = useNotifications()
   const [hasChanges, setHasChanges] = useState(false)
   const [showDropdown, setShowDropdown] = useState(false)
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null)
@@ -290,6 +297,61 @@ export default function SettingsPage() {
               </p>
             )}
           </div>
+        </div>
+
+        {/* 消息提醒 */}
+        <div className="rounded-xl border border-border p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5 text-sm font-medium">
+                <Bell className="h-4 w-4" />
+                新消息提醒
+              </div>
+              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                {notifyPermission === "unsupported"
+                  ? "当前浏览器不支持桌面通知"
+                  : notifyPermission === "denied"
+                    ? "已被浏览器拒绝。点击地址栏左侧的图标可以改回来"
+                    : notifyPermission === "granted"
+                      ? "开着网站时，有新消息会弹出提醒"
+                      : "开启后，买家联系你会弹出提醒"}
+              </p>
+            </div>
+
+            {notifyPermission === "granted" ? (
+              <button
+                type="button"
+                role="switch"
+                aria-checked={notifyEnabled}
+                onClick={() => setNotifyEnabled(!notifyEnabled)}
+                className={`relative mt-0.5 h-6 w-11 shrink-0 rounded-full transition-colors ${
+                  notifyEnabled ? "bg-primary" : "bg-muted-foreground/30"
+                }`}
+              >
+                <span
+                  className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${
+                    notifyEnabled ? "translate-x-[22px]" : "translate-x-0.5"
+                  }`}
+                />
+              </button>
+            ) : notifyPermission === "default" ? (
+              <button
+                type="button"
+                onClick={async () => {
+                  const p = await requestNotifyPermission()
+                  if (p === "granted") toast.success("已开启新消息提醒")
+                  else if (p === "denied") toast.error("已被浏览器拒绝")
+                }}
+                className="shrink-0 rounded-full bg-primary px-4 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90"
+              >
+                开启
+              </button>
+            ) : null}
+          </div>
+
+          <p className="mt-3 border-t border-border pt-3 text-[11px] leading-relaxed text-muted-foreground">
+            提醒只在浏览器开着时有效。关掉浏览器后的推送与邮件提醒还在开发中。
+          </p>
         </div>
 
         <Button onClick={handleSave} disabled={isSaving || !hasChanges} className="w-full rounded-full" size="lg">

@@ -4,6 +4,7 @@ import { Analytics } from '@vercel/analytics/next'
 import { Toaster } from '@/components/ui/sonner'
 import { AppProvider } from '@/lib/store'
 import { AuthProvider } from '@/lib/auth-context'
+import { NotificationProvider } from '@/lib/notifications'
 import { AppShell } from '@/components/app-shell'
 import './globals.css'
 
@@ -68,10 +69,12 @@ export default function RootLayout({
     <html lang="zh-CN">
       <body className="font-sans antialiased">
         <AuthProvider>
-          <AppProvider>
-            <AppShell>{children}</AppShell>
-            <Toaster richColors position="top-center" />
-          </AppProvider>
+          <NotificationProvider>
+            <AppProvider>
+              <AppShell>{children}</AppShell>
+              <Toaster richColors position="top-center" />
+            </AppProvider>
+          </NotificationProvider>
         </AuthProvider>
         <Analytics />
       </body>

@@ -39,6 +39,7 @@ function AuthPageInner() {
   const [registerEmail, setRegisterEmail] = useState("")
   const [registerPassword, setRegisterPassword] = useState("")
   const [nameStatus, setNameStatus] = useState<NameStatus>("idle")
+  const [tab, setTab] = useState("login")
 
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const abortRef = useRef<AbortController | null>(null)
@@ -124,7 +125,7 @@ function AuthPageInner() {
     }
     if (registerPassword.length < 8) { toast.error("密码至少需要 8 位"); return }
     setIsLoading(true)
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email: registerEmail,
       password: registerPassword,
       options: {
@@ -133,8 +134,51 @@ function AuthPageInner() {
       },
     })
     setIsLoading(false)
-    if (error) { toast.error("注册失败", { description: error.message }) }
-    else { toast.success("注册成功！请查收验证邮件", { description: "验证邮箱后即可登录", duration: 6000 }) }
+
+    if (error) {
+      toast.error("注册失败", { description: error.message })
+      return
+    }
+
+    // Supabase 为防止邮箱枚举，对「已注册且已验证」的邮箱会返回假成功：
+    // 不报错、不创建用户、也不发验证邮件，只是把 identities 返回成空数组。
+    // 不检查这里的话，用户会看到"注册成功"却永远等不到邮件。
+    // 参考 https://github.com/supabase/supabase-js/issues/296
+    if (data.user && data.user.identities?.length === 0) {
+      setLoginEmail(registerEmail)
+      setTab("login")
+      toast.error("这个邮箱已经注册过了", {
+        description: "已帮你切到登录页，直接用原密码登录即可",
+        duration: 7000,
+      })
+      return
+    }
+
+    // 走到这里有两种可能：新用户创建成功，或该邮箱注册过但从未验证、
+    // Supabase 重发了一封验证邮件。两者在客户端返回上无法区分
+    // （都是 user 非空 + identities 非空 + session 为 null），
+    // 所以用一句对两种情况都成立的文案。
+    toast.success("验证邮件已发送", {
+      description: "请到邮箱点击验证链接，记得看一下垃圾邮件箱",
+      duration: 6000,
+    })
+  }
+
+  /** 注册过但没收到验证邮件时，重新发一封 */
+  async function handleResendVerification() {
+    if (!loginEmail.trim()) {
+      toast.error("请先填写邮箱")
+      return
+    }
+    setIsLoading(true)
+    const { error } = await supabase.auth.resend({
+      type: "signup",
+      email: loginEmail.trim(),
+      options: { emailRedirectTo: `${window.location.origin}/auth/verify` },
+    })
+    setIsLoading(false)
+    if (error) toast.error("发送失败", { description: error.message })
+    else toast.success("验证邮件已重新发送", { description: "记得看一下垃圾邮件箱", duration: 6000 })
   }
 
   const canSubmitRegister =
@@ -154,7 +198,7 @@ function AuthPageInner() {
         <p className="text-sm text-muted-foreground">留学生二手交易平台</p>
       </div>
       <div className="w-full max-w-sm">
-        <Tabs defaultValue="login">
+        <Tabs value={tab} onValueChange={setTab}>
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="login">登录</TabsTrigger>
             <TabsTrigger value="register">注册</TabsTrigger>
@@ -177,6 +221,18 @@ function AuthPageInner() {
                 </div>
               </div>
               <Button type="submit" className="w-full rounded-full" disabled={isLoading}>{isLoading ? "登录中..." : "登录"}</Button>
+
+              <p className="text-center text-xs text-muted-foreground">
+                没收到验证邮件？
+                <button
+                  type="button"
+                  onClick={handleResendVerification}
+                  disabled={isLoading}
+                  className="ml-1 text-primary underline-offset-2 hover:underline disabled:opacity-50"
+                >
+                  重新发送
+                </button>
+              </p>
             </form>
           </TabsContent>
 

@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation"
 import { Loader2, MessageCircle } from "lucide-react"
 import { useAuth } from "@/lib/auth-context"
 import { SUPABASE_URL, authHeaders } from "@/lib/supabase-rest"
+import { NotificationPrompt } from "@/components/notification-prompt"
 
 type Conversation = {
   id: string
@@ -90,6 +91,10 @@ export default function MessagesPage() {
     <div>
       <div className="sticky top-0 z-10 border-b border-border bg-background/95 px-4 py-3 backdrop-blur-sm">
         <h1 className="text-base font-semibold">消息</h1>
+      </div>
+
+      <div className="px-4 pt-3">
+        <NotificationPrompt />
       </div>
 
       {conversations.length === 0 ? (

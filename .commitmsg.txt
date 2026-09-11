@@ -1,0 +1,30 @@
+feat(notify): in-app realtime message notifications + fix silent signup failure
+
+消息通知（站内实时层）
+- lib/notifications.tsx: 全局 Realtime 订阅，替代此前只在聊天详情页订阅、
+  首页靠 30 秒轮询的做法。页面不可见时弹浏览器通知、标题闪烁、favicon 徽点
+- components/notification-prompt.tsx: 消息页顶部开启引导，可关闭且记住选择
+- 设置页新增提醒开关，并写明「关掉浏览器收不到」的边界
+- 006_realtime_messages.sql: 幂等迁移，确保 messages/conversations 进入
+  supabase_realtime publication。此前从未被显式保证过，聊天页的 10 秒
+  轮询兜底就是因为这个
+
+修复注册静默失败
+- Supabase 为防邮箱枚举，对已注册且已验证的邮箱返回假成功：error 为 null、
+  不建用户、不发邮件，只把 identities 返回成空数组。原代码只解构 error，
+  因此一路显示「注册成功」，用户却永远等不到验证邮件
+- 现检测 identities.length === 0，提示邮箱已注册并自动切到登录页
+- 登录页新增「没收到验证邮件？重新发送」入口
+- 参考 https://github.com/supabase/supabase-js/issues/296
+
+顺带
+- header.tsx: 铃铛此前是无 onClick 的假按钮且红点常亮，改为显示真实未读数
+  并跳转消息页
+- next.config.mjs: 设置 turbopack.root，消除因上级目录游离 pnpm-lock.yaml
+  导致的构建警告
+- 删除 app/auth/callback/route.ts.disabled。它是当年解决 route+page 冲突时
+  留下的空壳（无任何 HTTP handler），但 .next/types 里的残留引用会让
+  tsc 报两个 phantom 的 "Cannot find module .../route.js"
+
+验证：next build 通过（Next.js 16.3.4，18/18 静态页）；
+tsc 仅剩 4 个重构前既有的 Supabase SDK 泛型噪音，新增代码零错误
