@@ -1,17 +1,7 @@
-feat(auth): add password reset flow
+fix(auth): show resend-verification only when login reports unverified email
 
-此前登录页没有任何找回入口，用户忘记密码就彻底进不来了。
+上一版把「没收到验证邮件？重新发送」常驻在登录页底部。对第一次来的
+访客来说这是噪音——他还没注册过，不存在验证邮件。
 
-- app/auth/reset/page.tsx: 新增重置页。因为客户端设了
-  detectSessionInUrl: false，需手动 exchangeCodeForSession 换取会话，
-  与 /auth/verify 的处理方式一致；随后调用 updateUser 设置新密码
-- 登录页密码栏右上角新增「忘记密码？」，调用 resetPasswordForEmail
-- 链接失效、被用过、或邮箱客户端截断时给出可读的原因和重新申请入口
-- 新密码需 ≥8 位并二次确认，与注册页的校验保持一致
-
-注意：Supabase 对未注册邮箱的 resetPasswordForEmail 同样返回成功
-（防邮箱枚举），所以文案写成「如果该邮箱已注册，重置邮件已发出」，
-不断言邮箱存在。
-
-已知限制：Supabase 内置 SMTP 限 2 封/小时，重置邮件与注册验证邮件
-共用这个额度。上线前需配置自定义 SMTP，见 README 待完善功能。
+改为：登录失败且错误为 email_not_confirmed 时才展开一条提示，
+里面带重发入口。修改邮箱输入框会自动收起，避免换了账号后残留误导。

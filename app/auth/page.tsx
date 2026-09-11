@@ -40,6 +40,7 @@ function AuthPageInner() {
   const [registerPassword, setRegisterPassword] = useState("")
   const [nameStatus, setNameStatus] = useState<NameStatus>("idle")
   const [tab, setTab] = useState("login")
+  const [needsVerification, setNeedsVerification] = useState(false)
 
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const abortRef = useRef<AbortController | null>(null)
@@ -107,10 +108,29 @@ function AuthPageInner() {
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault()
     setIsLoading(true)
+    setNeedsVerification(false)
     const { error } = await supabase.auth.signInWithPassword({ email: loginEmail, password: loginPassword })
     setIsLoading(false)
-    if (error) { toast.error("登录失败", { description: error.message }) }
-    else { toast.success("登录成功！"); router.push("/"); router.refresh() }
+
+    if (!error) {
+      toast.success("登录成功！")
+      router.push("/")
+      router.refresh()
+      return
+    }
+
+    // 邮箱注册了但没点验证链接时，Supabase 返回 email_not_confirmed。
+    // 只有这时才露出「重新发送验证邮件」，平时不占位置。
+    const unverified =
+      error.code === "email_not_confirmed" ||
+      /email not confirmed/i.test(error.message)
+
+    if (unverified) {
+      setNeedsVerification(true)
+      toast.error("邮箱还没验证", { description: "请先点击验证邮件里的链接", duration: 6000 })
+    } else {
+      toast.error("登录失败", { description: error.message })
+    }
   }
 
   async function handleRegister(e: React.FormEvent) {
@@ -232,7 +252,7 @@ function AuthPageInner() {
             <form onSubmit={handleLogin} className="mt-4 flex flex-col gap-4">
               <div>
                 <Label htmlFor="login-email">邮箱</Label>
-                <Input id="login-email" type="email" placeholder="your@email.com" value={loginEmail} onChange={(e) => setLoginEmail(e.target.value)} className="mt-1.5" required autoComplete="email" />
+                <Input id="login-email" type="email" placeholder="your@email.com" value={loginEmail} onChange={(e) => { setLoginEmail(e.target.value); setNeedsVerification(false) }} className="mt-1.5" required autoComplete="email" />
               </div>
               <div>
                 <div className="flex items-baseline justify-between">
@@ -255,17 +275,23 @@ function AuthPageInner() {
               </div>
               <Button type="submit" className="w-full rounded-full" disabled={isLoading}>{isLoading ? "登录中..." : "登录"}</Button>
 
-              <p className="text-center text-xs text-muted-foreground">
-                没收到验证邮件？
-                <button
-                  type="button"
-                  onClick={handleResendVerification}
-                  disabled={isLoading}
-                  className="ml-1 text-primary underline-offset-2 hover:underline disabled:opacity-50"
-                >
-                  重新发送
-                </button>
-              </p>
+              {/* 只在登录时确认「邮箱未验证」后才出现，避免常驻打扰新用户 */}
+              {needsVerification && (
+                <div className="rounded-xl border border-amber-500/30 bg-amber-50 p-3 text-xs leading-relaxed dark:bg-amber-950/20">
+                  <p className="font-medium text-foreground">这个邮箱还没完成验证</p>
+                  <p className="mt-0.5 text-muted-foreground">
+                    请到邮箱点击验证链接。找不到的话看看垃圾邮件箱，或者
+                    <button
+                      type="button"
+                      onClick={handleResendVerification}
+                      disabled={isLoading}
+                      className="mx-1 text-primary underline underline-offset-2 disabled:opacity-50"
+                    >
+                      重新发送一封
+                    </button>
+                  </p>
+                </div>
+              )}
             </form>
           </TabsContent>
 
